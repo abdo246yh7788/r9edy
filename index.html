@@ -3,195 +3,214 @@
  <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>لوحة رصيدي - شاشة اللاعبين</title>
-  <script src="/_sdk/data_sdk.js"></script>
-  <script src="/_sdk/element_sdk.js"></script>
+  <title>لوحة رصيدي التفاعلية</title>
+  <!-- مكتبة السيرفر السحابي المجاني (MQTT) -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- إضافة مكتبة PeerJS للاستقبال -->
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
         /* إعدادات أساسية */
-        :root {
-            --circle-size: 1.5vw;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f3f4f6;
-            color: #1f2937;
-            overflow-x: hidden;
-        }
+        :root { --circle-size: 1.5vw; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; color: #1f2937; overflow-x: hidden; }
 
         /* --- تصميم الدوائر --- */
         .circle {
-            width: var(--circle-size); 
-            height: var(--circle-size);
-            min-width: 10px;
-            min-height: 10px;
-            max-width: 45px;
-            max-height: 45px;
-            border-radius: 50%;
-            border: 1px solid #d1d5db;
-            background-color: transparent;
-            display: inline-block;
-            margin: 1px;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            cursor: default; /* منع مؤشر الماوس من الإيحاء بأنه قابل للضغط */
+            width: var(--circle-size); height: var(--circle-size);
+            min-width: 10px; min-height: 10px; max-width: 45px; max-height: 45px;
+            border-radius: 50%; border: 1px solid #d1d5db; background-color: transparent;
+            display: inline-block; margin: 1px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .circle:hover { transform: scale(1.15); z-index: 5; }
+        .circle.clicked { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.5); }
+            100% { transform: scale(1); }
         }
 
         /* حاوية الشبكة */
         .grid-wrapper {
-            background: white;
-            border-radius: 1rem;
-            padding: 0.25rem; 
+            background: white; border-radius: 1rem; padding: 0.25rem; 
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            display: flex;
-            justify-content: center;
-            overflow-x: auto;
-            width: 100%;
+            display: flex; justify-content: center; overflow-x: auto; width: 100%;
         }
-
-        .grid-row {
-            display: flex;
-            justify-content: center;
-            white-space: nowrap;
-        }
+        .grid-row { display: flex; justify-content: center; white-space: nowrap; }
 
         /* --- تصميم الأزرار والبطاقات --- */
-        .card {
-            background: white;
-            border-radius: 1rem;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-            border: 1px solid #e5e7eb;
-            overflow: hidden;
-        }
+        .card { background: white; border-radius: 1rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); border: 1px solid #e5e7eb; overflow: hidden; }
 
         .team-btn {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            width: 7rem;
-            padding: 0.5rem 0.2rem;
-            border-radius: 0.75rem;
-            border: 2px solid transparent;
-            background-color: #ffffff;
-            transition: all 0.2s ease;
-            position: relative;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            pointer-events: none; /* يمنع الضغط على الأزرار للمشاهد */
+            display: flex; flex-direction: column; align-items: center; justify-content: center; width: 7rem; padding: 0.5rem 0.2rem;
+            border-radius: 0.75rem; border: 2px solid transparent; background-color: #ffffff; transition: all 0.2s ease; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
+        .team-btn.active { border-color: var(--team-color); background-color: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); transform: translateY(-2px); }
+        .team-btn-indicator { width: 1.5rem; height: 1.5rem; border-radius: 50%; background-color: var(--team-color); margin-bottom: 0.25rem; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .team-btn.active .team-btn-indicator { transform: scale(1.1); }
+        .team-btn-label { font-size: 0.75rem; font-weight: 700; color: #4b5563; text-align: center; line-height: 1.1; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .team-btn.active .team-btn-label { color: var(--team-color); }
 
-        .team-btn-indicator {
-            width: 1.5rem;
-            height: 1.5rem;
-            border-radius: 50%;
-            background-color: var(--team-color);
-            margin-bottom: 0.25rem;
-            border: 2px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        @keyframes shake { 0%, 100% { transform: translateY(-2px) translateX(0); } 25% { transform: translateY(-2px) translateX(-4px); } 75% { transform: translateY(-2px) translateX(4px); } }
+        .shake-anim { animation: shake 0.3s ease-in-out; border-color: #ef4444 !important; background-color: #fef2f2 !important; }
+
+        /* --- تأثير تحطم الفخ --- */
+        @keyframes trapShatter {
+            0% { transform: scale(1) rotate(0deg); opacity: 1; }
+            20% { transform: scale(1.5) rotate(-20deg); filter: brightness(1.5); }
+            40% { transform: scale(1.5) rotate(20deg); }
+            60% { transform: scale(1.8) rotate(-20deg); opacity: 0.8; }
+            100% { transform: scale(3) rotate(45deg); opacity: 0; filter: brightness(0.5); }
         }
-
-        .team-btn-label {
-            font-size: 0.75rem;
-            font-weight: 700;
-            color: #4b5563;
-            text-align: center;
-            line-height: 1.1;
-            width: 100%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        /* إخفاء أزرار الزيادة والنقصان في شاشة اللاعبين */
-        .btn-minus, .btn-plus, .quota-minus, .quota-plus {
-            display: none !important;
+        .trap-shatter {
+            animation: trapShatter 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards !important;
+            display: flex !important; align-items: center; justify-content: center; font-size: min(2vw, 24px);
+            z-index: 50 !important; box-shadow: 0 0 20px rgba(239, 68, 68, 0.8) !important; color: white; text-shadow: 0px 0px 5px rgba(0,0,0,0.8);
         }
 
         /* --- لوحة الصدارة --- */
-        .leaderboard-item {
-            transition: all 0.3s ease;
-            border-bottom: 1px solid #f3f4f6;
-            padding: 0.75rem;
-        }
+        .leaderboard-item { transition: all 0.3s ease; border-bottom: 1px solid #f3f4f6; padding: 0.75rem; }
         .leaderboard-item:last-child { border-bottom: none; }
-        
-        .expand-btn {
-            width: 100%;
-            padding: 0.75rem;
-            text-align: center;
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: #6b7280;
-            cursor: pointer;
-            border-top: 1px solid #f3f4f6;
-            transition: background 0.2s;
-        }
+        .leaderboard-item:hover { background-color: #f9fafb; }
+        .expand-btn { width: 100%; padding: 0.75rem; text-align: center; font-size: 0.85rem; font-weight: 600; color: #6b7280; cursor: pointer; border-top: 1px solid #f3f4f6; transition: background 0.2s; }
 
-        @media (max-width: 640px) {
-            .grid-wrapper { padding: 0.25rem; }
-            .team-btn { width: 6.5rem; }
-        }
+        @media (max-width: 640px) { .grid-wrapper { padding: 0.25rem; } .team-btn { width: 6.5rem; } }
     </style>
  </head>
  <body class="min-h-screen pb-10">
    
-   <!-- حالة الاتصال للمشاهد -->
-   <div id="connection-status" class="fixed top-4 right-4 z-50 bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-amber-200 flex items-center gap-2">
-       جاري الاتصال بلوحة الإدارة...
+   <!-- حالة السحابة (تنبيه مرئي) -->
+   <div id="cloud-status" class="fixed top-4 right-4 z-50 bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-amber-200 flex items-center gap-2">
+       جاري الاتصال بالسيرفر...
+   </div>
+
+   <!-- زر الإعدادات (مخفي للمشاهدين) -->
+   <button id="settings-btn" class="fixed top-4 left-4 z-50 bg-white p-2 rounded-full shadow-md hover:bg-gray-50 transition-colors border border-gray-200 admin-only hidden" title="الإعدادات">
+    <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+   </button>
+
+   <!-- نافذة الإعدادات -->
+   <div id="settings-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl transform scale-100 transition-all flex flex-col max-h-[90vh]">
+      <div class="p-6 border-b">
+       <div class="flex justify-between items-center">
+        <h2 class="text-xl font-bold text-gray-800">إعدادات اللوحة</h2>
+        <button id="close-settings" class="text-gray-400 hover:text-gray-600 transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+       </div>
+      </div>
+      <div class="p-6 overflow-y-auto custom-scrollbar">
+          <div class="space-y-4">
+              <div><label class="block text-sm font-medium text-gray-700 mb-1">العنوان الرئيسي</label> <input type="text" id="main-title-input" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"></div>
+              <div><label class="block text-sm font-medium text-gray-700 mb-1">الوصف الفرعي</label> <input type="text" id="subtitle-input" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"></div>
+              
+              <div class="pt-4 border-t mt-4 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                 <h3 class="font-bold text-indigo-800 mb-3 text-sm">إعدادات اللعبة والساحة</h3>
+                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                     <div><label class="block text-[10px] font-bold text-gray-600 mb-1 text-center">الصفوف (5-50)</label><input type="number" id="grid-rows-input" min="5" max="50" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-indigo-500"></div>
+                     <div><label class="block text-[10px] font-bold text-gray-600 mb-1 text-center">الأعمدة (5-60)</label><input type="number" id="grid-cols-input" min="5" max="60" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-indigo-500"></div>
+                     <div><label class="block text-[10px] font-bold text-amber-600 mb-1 text-center">أموال/دائرة 💰</label><input type="number" id="coins-per-circle-input" min="1" max="1000" class="w-full px-2 py-2 border border-amber-200 bg-amber-50 rounded-lg text-center font-bold text-amber-700 outline-none focus:ring-2 focus:ring-amber-500"></div>
+                     <div><label class="block text-[10px] font-bold text-blue-600 mb-1 text-center">رصيد الدوائر ⭕</label><input type="number" id="default-quota-input" min="1" max="1000" class="w-full px-2 py-2 border border-blue-200 bg-blue-50 rounded-lg text-center font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500"></div>
+                 </div>
+              </div>
+
+              <div class="pt-4 border-t mt-4 bg-purple-50/50 p-4 rounded-xl border border-purple-100">
+                 <h3 class="font-bold text-purple-800 mb-3 text-sm">أسعار المتجر</h3>
+                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                     <div><label class="block text-[10px] font-bold text-purple-600 mb-1 text-center">سعر مدفع التدمير 💣</label><input type="number" id="cannon-price-input" min="1" max="10000" class="w-full px-2 py-2 border border-purple-200 bg-white rounded-lg text-center font-bold text-purple-700 outline-none focus:ring-2 focus:ring-purple-500"></div>
+                     <div><label class="block text-[10px] font-bold text-blue-600 mb-1 text-center">سعر التنقل السريع 🚀</label><input type="number" id="teleport-price-input" min="1" max="10000" class="w-full px-2 py-2 border border-blue-200 bg-white rounded-lg text-center font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500"></div>
+                     <div><label class="block text-[10px] font-bold text-gray-600 mb-1 text-center">سعر الفخ 🕸️</label><input type="number" id="trap-price-input" min="1" max="10000" class="w-full px-2 py-2 border border-gray-200 bg-white rounded-lg text-center font-bold text-gray-700 outline-none focus:ring-2 focus:ring-gray-500"></div>
+                 </div>
+              </div>
+
+              <div class="pt-2 border-t mt-2">
+                 <label class="block text-sm font-bold text-gray-700 mb-2">عدد الفرق (2 - 30)</label>
+                 <input type="number" id="team-count-input" min="2" max="30" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-center font-bold text-lg outline-none focus:ring-2 focus:ring-indigo-500">
+              </div>
+
+              <div class="pt-4">
+                <h3 class="font-semibold text-gray-900 mb-3">أسماء وألوان الفرق</h3>
+                <div id="team-settings" class="space-y-2"></div>
+              </div>
+
+              <div class="pt-6 border-t mt-6 border-red-100">
+                 <button id="clear-btn" type="button" class="w-full bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 px-4 py-3 rounded-lg font-bold text-sm transition-all flex justify-center items-center gap-2">
+                    <span>🗑️</span> مسح اللوحة وتصفير الأموال والدوائر
+                 </button>
+              </div>
+          </div>
+      </div>
+      <div class="p-4 border-t bg-gray-50 rounded-b-2xl flex gap-3">
+           <button id="save-settings" class="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-md hover:shadow-lg transition-all">حفظ وتطبيق</button>
+      </div>
+    </div>
    </div>
 
    <!-- المحتوى الرئيسي -->
    <div class="max-w-[1800px] mx-auto p-2 lg:p-4 space-y-4">
      
-     <!-- الهيدر -->
-     <header class="text-center py-2">
+     <!-- الهيدر (يمكن الضغط عليه 3 مرات سراً لتفعيل الإدارة) -->
+     <header class="text-center py-2 cursor-pointer select-none" id="secret-admin-trigger" title="اضغط 3 مرات للدخول للإدارة">
         <h1 id="main-title" class="text-3xl md:text-4xl font-extrabold text-gray-900 tracking-tight mb-2">لوحة رصيدي</h1>
         <p id="subtitle" class="text-gray-500 text-sm md:text-base"></p>
      </header>
 
      <!-- أدوات التحكم والفرق -->
      <div class="card p-4 flex flex-col items-center w-full shadow-lg border-indigo-50">
-        <!-- اختيار الفرق -->
+        
+        <div id="admin-tools" class="bg-gray-100 p-1 rounded-xl inline-flex mb-4 w-full max-w-sm admin-only hidden">
+            <button id="color-mode" class="flex-1 py-2 px-4 rounded-lg text-sm font-bold shadow-sm bg-white text-indigo-600 transition-all">🎨 وضع التلوين</button>
+            <button id="delete-mode" class="flex-1 py-2 px-4 rounded-lg text-sm font-bold text-gray-500 hover:text-gray-700 transition-all">🗑️ وضع الحذف</button>
+        </div>
+
         <div class="w-full">
-            <div id="team-selection-container" class="flex flex-wrap justify-center gap-2">
-                <!-- سيتم رسم الفرق تلقائياً من الإدارة -->
-            </div>
+            <div id="team-selection-container" class="flex flex-wrap justify-center gap-2"></div>
+        </div>
+
+        <div id="delete-instructions" class="hidden mt-4 bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold animate-pulse">
+            حالة الحذف مفعلة: اضغط على أي دائرة لمسحها لاستعادة الرصيد
         </div>
      </div>
 
-     <!-- التخطيط السفلي -->
      <div class="flex flex-col lg:flex-row gap-3 items-start">
         
-        <!-- العمود الجانبي (لوحة الصدارة) - تم إزالة المتجر -->
+        <!-- العمود الجانبي -->
         <div class="w-full lg:w-60 flex-shrink-0 order-1 lg:order-1">
             <div class="sticky top-4 space-y-4">
                 
-                <!-- بطاقة لوحة الصدارة -->
                 <div class="card">
                     <div class="bg-gray-50/50 p-3 border-b border-gray-100 flex justify-between items-center">
-                        <h3 class="font-bold text-gray-800 text-base flex items-center gap-2">
-                            <span>🏆</span> الصدارة
-                        </h3>
+                        <h3 class="font-bold text-gray-800 text-base flex items-center gap-2"><span>🏆</span> الصدارة</h3>
                     </div>
-                    <div id="leaderboard-list" class="divide-y divide-gray-50">
-                        <!-- سيتم تحديث القائمة تلقائياً -->
+                    <div id="leaderboard-list" class="divide-y divide-gray-50"></div>
+                    <div id="leaderboard-expand-btn" class="expand-btn hidden">عرض الـ 10 الأوائل ↓</div>
+                </div>
+
+                <div class="card bg-white border-2 border-amber-100 shadow-lg admin-only hidden" id="store-card">
+                    <div class="bg-amber-50 p-3 border-b border-amber-100 flex justify-between items-center">
+                        <h3 class="font-bold text-amber-800 text-base flex items-center gap-2"><span>🛒</span> متجر المكافآت</h3>
+                        <span class="text-xs font-bold bg-amber-200 text-amber-800 px-2 py-1 rounded-full" id="store-team-coins">0 💰</span>
                     </div>
-                    <div id="leaderboard-expand-btn" class="expand-btn hidden">
-                        عرض الـ 10 الأوائل ↓
+                    <div class="p-3 space-y-3">
+                        <button id="btn-buy-cannon" disabled class="w-full relative overflow-hidden bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-xl p-3 shadow-sm transform transition active:scale-95 disabled:opacity-50 group border-none">
+                            <div class="flex justify-between items-center relative z-10"><span class="font-bold text-sm text-white">💣 مدفع التدمير</span><span id="cannon-price-display" class="bg-white/20 px-2 py-1 rounded-lg text-xs font-black text-white">50 💰</span></div>
+                            <p class="text-[10px] text-white/90 text-right mt-1 relative z-10 font-medium">يدمر 5 دوائر للخصم على شكل (+)</p>
+                        </button>
+                        <button id="btn-buy-teleport" disabled class="w-full relative overflow-hidden bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl p-3 shadow-sm transform transition active:scale-95 disabled:opacity-50 group border-none">
+                            <div class="flex justify-between items-center relative z-10"><span class="font-bold text-sm text-white">🚀 التنقل السريع</span><span id="teleport-price-display" class="bg-white/20 px-2 py-1 rounded-lg text-xs font-black text-white">30 💰</span></div>
+                            <p class="text-[10px] text-white/90 text-right mt-1 relative z-10 font-medium">وضع دائرة إضافية في أي مكان فارغ</p>
+                        </button>
+                        <button id="btn-buy-trap" disabled class="w-full relative overflow-hidden bg-gradient-to-r from-gray-700 to-gray-900 text-white rounded-xl p-3 shadow-sm transform transition active:scale-95 disabled:opacity-50 group border-none">
+                            <div class="flex justify-between items-center relative z-10"><span class="font-bold text-sm text-white">🕸️ فخ الدوائر</span><span id="trap-price-display" class="bg-white/20 px-2 py-1 rounded-lg text-xs font-black text-white">40 💰</span></div>
+                            <p class="text-[10px] text-white/90 text-right mt-1 relative z-10 font-medium">يحمي دائرتك ويفقد الخصم دائرته</p>
+                        </button>
+                        <div id="weapon-status" class="hidden mt-2 text-xs font-bold p-2 rounded-lg text-center animate-pulse border"></div>
                     </div>
                 </div>
 
             </div>
         </div>
 
-        <!-- العمود الرئيسي (الساحة) -->
         <div class="flex-1 w-full space-y-4 order-2 lg:order-2">
             <div class="grid-wrapper">
-                <div id="circles-grid" class="flex flex-col items-center">
-                    <!-- سيتم رسم الدوائر تلقائياً -->
-                </div>
+                <div id="circles-grid" class="flex flex-col items-center"></div>
             </div>
         </div>
 
@@ -200,52 +219,277 @@
    </div>
 
   <script>
-        // إعدادات المتغيرات الأولية
-        let teamColors = [];
-        let defaultTeamNames = [];
-        let teamCount = 0;
+        // === متغيرات حالة اللعبة ===
+        const allColors = [
+            '#166534', '#ea580c', '#db2777', '#0284c7', '#1f2937', '#ca8a04', '#4b5563', '#1e40af', '#dc2626',
+            '#7c3aed', '#059669', '#be123c', '#0f766e', '#b45309', '#4338ca', '#a21caf', '#374151', '#15803d',
+            '#b91c1c', '#0369a1', '#6d28d9', '#047857', '#9f1239', '#0e7490', '#c2410c', '#3730a3', '#86198f'
+        ];
+
+        let isAdmin = false; 
+
+        let teamColors = [...allColors];
+        let defaultTeamNames = Array.from({length: 30}, (_, i) => `فريق ${i + 1}`);
+
+        let teamCount = 9;
         let gridRows = 24; 
         let gridCols = 43; 
         let coinsPerCircle = 5; 
         let defaultQuota = 30; 
+        let cannonPrice = 50;
+        let teleportPrice = 30; 
+        let trapPrice = 40; 
         
+        let selectedTeam = 0;
         let circleData = new Map();
+        let trapData = new Map(); 
         let manualCoins = new Array(30).fill(0); 
         let manualQuota = new Array(30).fill(0); 
+        let teamCoinsGlobal = new Array(30).fill(0); 
         
-        let isLeaderboardAnimating = false;
+        let isDeleteMode = false;
+        let activeWeapon = null; 
         let isLeaderboardExpanded = false;
 
+        // ==========================================
+        //  إعداد السيرفر المجاني السريع (MQTT)
+        // ==========================================
+        let mqttClient = null;
+        // قم بتغيير هذا الرقم ليكون مميزاً وخاصاً بك فقط لكي لا يتداخل مع لوحات أخرى
+        const GAME_SECRET_TOPIC = "abdullah_residi_board_v1_super_secret_998877"; 
+
+        function initCloud() {
+            const statusEl = document.getElementById('cloud-status');
+            statusEl.textContent = "جاري الاتصال بالسيرفر...";
+            
+            // الاتصال بالسيرفر المجاني (مفتوح ولا يحتاج حسابات ويعمل على كل الشبكات)
+            mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
+
+            mqttClient.on('connect', () => {
+                statusEl.textContent = "🟢 متصل ومباشر";
+                statusEl.className = "fixed top-4 right-4 z-50 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-green-200 flex items-center gap-2";
+                
+                // الاشتراك في قناة اللعبة الخاصة بك
+                mqttClient.subscribe(GAME_SECRET_TOPIC);
+            });
+
+            // استقبال التحديثات من السيرفر
+            mqttClient.on('message', (topic, message) => {
+                if (topic === GAME_SECRET_TOPIC) {
+                    try {
+                        const data = JSON.parse(message.toString());
+                        // المشاهدون يتحدثون فوراً (الأدمن لا يتحدث من الشبكة لكي لا يتقطع عمله)
+                        if (!isAdmin) {
+                            applyCloudData(data);
+                        }
+                    } catch (e) { console.error("Error formatting data:", e); }
+                }
+            });
+
+            mqttClient.on('error', (err) => {
+                statusEl.textContent = "🔴 خطأ في الاتصال";
+                statusEl.className = "fixed top-4 right-4 z-50 bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-red-200 flex items-center gap-2";
+            });
+        }
+
+        // إرسال البيانات للسيرفر
+        function saveToCloud() {
+            if (!isAdmin || !mqttClient) return; // الأدمن فقط من يرسل البيانات
+            
+            const dataToSave = {
+                circles: JSON.stringify(Array.from(circleData.entries())),
+                traps: JSON.stringify(Array.from(trapData.entries())),
+                teamColors, defaultTeamNames, teamCount, gridRows, gridCols,
+                manualCoins, manualQuota, coinsPerCircle, defaultQuota,
+                cannonPrice, teleportPrice, trapPrice,
+                title: document.getElementById('main-title').textContent,
+                subtitle: document.getElementById('subtitle').textContent,
+                timestamp: Date.now()
+            };
+
+            // خاصية retain: true هي السحر! تخبر السيرفر بحفظ آخر رسالة، لكي يراها أي لاعب جديد يدخل لاحقاً
+            mqttClient.publish(GAME_SECRET_TOPIC, JSON.stringify(dataToSave), { retain: true });
+        }
+
+        function applyCloudData(data) {
+            teamColors = data.teamColors || teamColors;
+            defaultTeamNames = data.defaultTeamNames || defaultTeamNames;
+            teamCount = data.teamCount || teamCount;
+            gridRows = data.gridRows || gridRows;
+            gridCols = data.gridCols || gridCols;
+            manualCoins = data.manualCoins || manualCoins;
+            manualQuota = data.manualQuota || manualQuota;
+            coinsPerCircle = data.coinsPerCircle || coinsPerCircle;
+            defaultQuota = data.defaultQuota || defaultQuota;
+            cannonPrice = data.cannonPrice || cannonPrice;
+            teleportPrice = data.teleportPrice || teleportPrice;
+            trapPrice = data.trapPrice || trapPrice;
+
+            document.getElementById('main-title').textContent = data.title || "لوحة رصيدي";
+            document.getElementById('subtitle').textContent = data.subtitle || "";
+
+            try {
+                circleData = new Map(JSON.parse(data.circles));
+                trapData = new Map(JSON.parse(data.traps));
+            } catch(e) { circleData = new Map(); trapData = new Map(); }
+
+            createGrid();
+            initUI();
+            
+            circleData.forEach((val, key) => {
+                const el = document.querySelector(`.circle[data-key="${key}"]`);
+                if(el) updateCircleVisual(el, val.team);
+            });
+
+            updateStatsAndLeaderboard();
+        }
+
+        // === منطق الدخول للإدارة (الباب السري) ===
+        let titleClickCount = 0;
+        let titleClickTimer = null;
+        
+        document.getElementById('secret-admin-trigger').addEventListener('click', () => {
+            if (isAdmin) return;
+            titleClickCount++;
+            clearTimeout(titleClickTimer);
+            titleClickTimer = setTimeout(() => { titleClickCount = 0; }, 1000); 
+
+            if (titleClickCount >= 3) {
+                titleClickCount = 0;
+                const password = prompt("🔐 أدخل كلمة مرور الإدارة لتفعيل أدوات التحكم:");
+                if (password === "1234") { 
+                    activateAdminMode();
+                } else if (password !== null) {
+                    alert("❌ كلمة المرور غير صحيحة");
+                }
+            }
+        });
+
+        function activateAdminMode() {
+            isAdmin = true;
+            document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+            document.querySelectorAll('.circle').forEach(c => c.style.cursor = 'pointer');
+            initUI(); 
+            saveToCloud(); 
+            alert("✅ تم تفعيل وضع الإدارة بنجاح! جميع تغييراتك ستظهر للجميع لحظياً.");
+        }
+
+        // === أصوات اللعبة ===
+        function playSound(type) {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                const ctx = new AudioContext();
+                
+                if (type === 'error') {
+                    const osc1 = ctx.createOscillator(); const gainNode = ctx.createGain();
+                    osc1.type = 'square'; osc1.frequency.setValueAtTime(160, ctx.currentTime);
+                    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+                    gainNode.gain.linearRampToValueAtTime(0.8, ctx.currentTime + 0.05); 
+                    gainNode.gain.setValueAtTime(0.8, ctx.currentTime + 0.6); 
+                    gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+                    osc1.connect(gainNode); gainNode.connect(ctx.destination);
+                    osc1.start(); osc1.stop(ctx.currentTime + 0.8);
+                } else if (type === 'explosion') {
+                    const osc = ctx.createOscillator(); const gainNode = ctx.createGain();
+                    osc.type = 'square'; osc.frequency.setValueAtTime(100, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(10, ctx.currentTime + 0.3);
+                    gainNode.gain.setValueAtTime(1, ctx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+                    osc.connect(gainNode); gainNode.connect(ctx.destination);
+                    osc.start(); osc.stop(ctx.currentTime + 0.3);
+                } else if (type === 'teleport') {
+                    const osc = ctx.createOscillator(); const gainNode = ctx.createGain();
+                    osc.type = 'sine'; osc.frequency.setValueAtTime(300, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.2); 
+                    gainNode.gain.setValueAtTime(0, ctx.currentTime);
+                    gainNode.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+                    osc.connect(gainNode); gainNode.connect(ctx.destination);
+                    osc.start(); osc.stop(ctx.currentTime + 0.3);
+                } else if (type === 'trap') {
+                    const osc = ctx.createOscillator(); const gainOsc = ctx.createGain();
+                    osc.type = 'triangle'; osc.frequency.setValueAtTime(400, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.15);
+                    gainOsc.gain.setValueAtTime(1, ctx.currentTime);
+                    gainOsc.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+                    osc.connect(gainOsc); gainOsc.connect(ctx.destination);
+                    osc.start(); osc.stop(ctx.currentTime + 0.15);
+                }
+            } catch (e) { }
+        }
+
+        // === منطق الواجهة واللعب ===
         function initUI() {
             const selectContainer = document.getElementById('team-selection-container');
             selectContainer.innerHTML = '';
             
             for(let i = 0; i < teamCount; i++) {
                 const btn = document.createElement('button');
-                btn.className = `team-btn`;
+                btn.className = `team-btn ${i === selectedTeam ? 'active' : ''} ${!isAdmin ? 'pointer-events-none' : ''}`;
                 btn.style.setProperty('--team-color', teamColors[i]);
                 
-                // تم إزالة أزرار (-) و (+) بالكامل لأن هذا ملف المشاهدين
+                let controlsHTML = '';
+                if (isAdmin) {
+                    controlsHTML = `
+                        <div id="quota-container-${i}" class="flex items-center justify-between bg-blue-50 text-blue-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-blue-100 mt-1">
+                            <div class="quota-minus text-red-500 hover:bg-red-100 rounded-sm px-1.5 font-black pointer-events-auto" title="تقليل الدوائر">-</div>
+                            <div title="رصيد الدوائر المتبقي" class="flex items-center font-bold"><span>⭕</span> <span id="btn-quota-${i}" class="mr-1">0</span></div>
+                            <div class="quota-plus text-green-500 hover:bg-green-100 rounded-sm px-1.5 font-black pointer-events-auto" title="زيادة الدوائر">+</div>
+                        </div>
+                        <div class="flex items-center justify-between bg-amber-50 text-amber-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-amber-100 mt-1">
+                            <div class="btn-minus text-red-500 hover:bg-red-100 rounded-sm px-1.5 font-black pointer-events-auto" title="خصم أموال">-</div>
+                            <div title="إجمالي الأموال" class="flex items-center font-bold"><span>💰</span> <span id="btn-coins-${i}" class="mr-1">0</span></div>
+                            <div class="btn-plus text-green-500 hover:bg-green-100 rounded-sm px-1.5 font-black pointer-events-auto" title="إضافة أموال">+</div>
+                        </div>
+                    `;
+                } else {
+                    controlsHTML = `
+                        <div id="quota-container-${i}" class="flex items-center justify-center bg-blue-50 text-blue-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-blue-100 mt-1">
+                            <div title="رصيد الدوائر المتبقي" class="flex items-center font-bold"><span>⭕</span> <span id="btn-quota-${i}" class="mr-1">0</span></div>
+                        </div>
+                        <div class="flex items-center justify-center bg-amber-50 text-amber-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-amber-100 mt-1">
+                            <div title="إجمالي الأموال" class="flex items-center font-bold"><span>💰</span> <span id="btn-coins-${i}" class="mr-1">0</span></div>
+                        </div>
+                    `;
+                }
+
                 btn.innerHTML = `
                     <div class="team-btn-indicator"></div>
                     <span class="team-btn-label mb-1">${defaultTeamNames[i]}</span>
-                    <div class="flex flex-col w-full px-1 text-[10px] font-bold text-gray-500 border-t border-gray-100 pt-1 gap-1">
-                        
+                    <div class="flex flex-col w-full px-1 text-[10px] font-bold text-gray-500 border-t border-gray-100 pt-1">
                         <div class="flex justify-between w-full">
                             <div title="الدوائر الملونة" class="flex items-center"><span>●</span> <span id="btn-count-${i}" class="mr-0.5">0</span></div>
                             <div title="الانتصارات" class="flex items-center text-indigo-600"><span>🏆</span> <span id="btn-wins-${i}" class="mr-0.5">0</span></div>
                         </div>
-
-                        <div id="quota-container-${i}" class="flex items-center justify-between bg-blue-50 text-blue-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-blue-100 transition-colors">
-                            <div title="رصيد الدوائر المتبقي" class="flex items-center font-bold w-full justify-center"><span>⭕</span> <span id="btn-quota-${i}" class="mr-1">0</span></div>
-                        </div>
-
-                        <div class="flex items-center justify-between bg-amber-50 text-amber-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-amber-100">
-                            <div title="إجمالي الأموال" class="flex items-center font-bold w-full justify-center"><span>💰</span> <span id="btn-coins-${i}" class="mr-1">0</span></div>
-                        </div>
+                        ${controlsHTML}
                     </div>
                 `;
                 
+                if (isAdmin) {
+                    const minusBtn = btn.querySelector('.btn-minus');
+                    const plusBtn = btn.querySelector('.btn-plus');
+                    const qMinusBtn = btn.querySelector('.quota-minus');
+                    const qPlusBtn = btn.querySelector('.quota-plus');
+                    
+                    if (minusBtn) minusBtn.onclick = (e) => { e.stopPropagation(); manualCoins[i] -= coinsPerCircle; processUpdates(); };
+                    if (plusBtn) plusBtn.onclick = (e) => { e.stopPropagation(); manualCoins[i] += coinsPerCircle; processUpdates(); };
+                    if (qMinusBtn) qMinusBtn.onclick = (e) => { e.stopPropagation(); manualQuota[i] -= 1; processUpdates(); };
+                    if (qPlusBtn) qPlusBtn.onclick = (e) => { e.stopPropagation(); manualQuota[i] += 1; processUpdates(); };
+                    
+                    btn.onclick = () => {
+                        if (activeWeapon) {
+                            activeWeapon = null;
+                            document.getElementById('weapon-status').classList.add('hidden');
+                            document.getElementById('color-mode').click();
+                        }
+                        if (isDeleteMode) return;
+                        document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        selectedTeam = i;
+                        updateStoreUI(); 
+                    };
+                }
                 selectContainer.appendChild(btn);
             }
         }
@@ -253,7 +497,6 @@
         function createGrid() {
             const grid = document.getElementById('circles-grid');
             grid.innerHTML = '';
-            
             const estimatedSize = Math.max(1.0, 65 / gridCols); 
             document.documentElement.style.setProperty('--circle-size', `${estimatedSize}vw`);
 
@@ -264,9 +507,105 @@
                     const circle = document.createElement('div');
                     circle.className = 'circle';
                     circle.dataset.key = `${row}-${col}`;
+                    if (!isAdmin) circle.style.cursor = 'default';
+                    circle.onclick = (e) => {
+                        if (isAdmin) handleCircleClick(e, row, col);
+                    };
                     rowDiv.appendChild(circle);
                 }
                 grid.appendChild(rowDiv);
+            }
+        }
+
+        async function handleCircleClick(e, row, col) {
+            const circle = e.target;
+            const key = `${row}-${col}`;
+
+            if (activeWeapon === 'cannon') {
+                manualCoins[selectedTeam] -= cannonPrice;
+                const targets = [[row, col], [row-1, col], [row+1, col], [row, col-1], [row, col+1]];
+                targets.forEach(([r, c]) => {
+                    if (r < 0 || r >= gridRows || c < 0 || c >= gridCols) return;
+                    const k = `${r}-${c}`;
+                    const el = document.querySelector(`.circle[data-key="${k}"]`);
+                    if (circleData.has(k) && circleData.get(k).team !== selectedTeam) {
+                        circleData.delete(k); trapData.delete(k); 
+                    }
+                    if(el) {
+                        el.style.backgroundColor = '#ef4444'; el.style.borderColor = '#ef4444'; el.style.transform = 'scale(1.5)'; el.style.zIndex = '10';
+                        setTimeout(() => {
+                            el.style.transform = ''; el.style.zIndex = '';
+                            updateCircleVisual(el, circleData.has(k) ? circleData.get(k).team : null);
+                        }, 300);
+                    }
+                });
+                playSound('explosion');
+                activeWeapon = null;
+                document.getElementById('weapon-status').classList.add('hidden');
+                processUpdates();
+                return;
+            }
+            else if (activeWeapon === 'teleport') {
+                if (circleData.has(key)) { playSound('error'); return; }
+                manualCoins[selectedTeam] -= teleportPrice;
+                manualQuota[selectedTeam] += 1; 
+                playSound('teleport');
+                circle.style.transform = 'scale(1.5)'; circle.style.zIndex = '10';
+                setTimeout(() => { circle.style.transform = ''; circle.style.zIndex = ''; }, 300);
+                activeWeapon = null;
+                document.getElementById('weapon-status').classList.add('hidden');
+                circleData.set(key, { team: selectedTeam, value: 0 });
+                updateCircleVisual(circle, selectedTeam);
+                processUpdates();
+                return;
+            }
+            else if (activeWeapon === 'trap') {
+                if (!circleData.has(key) || circleData.get(key).team !== selectedTeam || trapData.has(key)) { playSound('error'); return; }
+                manualCoins[selectedTeam] -= trapPrice;
+                trapData.set(key, selectedTeam);
+                playSound('teleport'); 
+                circle.innerHTML = '🕸️'; circle.style.display = 'flex'; circle.style.alignItems = 'center'; circle.style.justifyContent = 'center';
+                circle.style.transform = 'scale(1.3) rotate(15deg)'; circle.style.boxShadow = 'inset 0 0 10px rgba(0,0,0,0.5)';
+                setTimeout(() => { circle.innerHTML = ''; circle.style.transform = ''; circle.style.boxShadow = ''; }, 800);
+                activeWeapon = null;
+                document.getElementById('weapon-status').classList.add('hidden');
+                processUpdates();
+                return;
+            }
+
+            if (!isDeleteMode) {
+                let coloredCount = 0;
+                circleData.forEach(data => { if(data.team === selectedTeam) coloredCount++; });
+                let remaining = defaultQuota + manualQuota[selectedTeam] - coloredCount;
+                const isSameTeam = circleData.has(key) && circleData.get(key).team === selectedTeam;
+
+                if (remaining <= 0 && !isSameTeam) { playSound('error'); return; }
+
+                if (!isSameTeam && trapData.has(key)) {
+                    trapData.delete(key); manualQuota[selectedTeam] -= 1; playSound('trap');
+                    circle.innerHTML = '❌'; circle.style.backgroundColor = '#ef4444'; circle.classList.add('trap-shatter');
+                    setTimeout(() => {
+                        circle.innerHTML = ''; circle.classList.remove('trap-shatter');
+                        circle.style.backgroundColor = ''; 
+                        if(circleData.has(key)) updateCircleVisual(circle, circleData.get(key).team);
+                    }, 600);
+                    processUpdates(); return; 
+                }
+            }
+
+            circle.classList.add('clicked');
+            setTimeout(() => circle.classList.remove('clicked'), 300);
+
+            if (isDeleteMode) {
+                if (circleData.has(key)) {
+                    circleData.delete(key); trapData.delete(key); 
+                    updateCircleVisual(circle, null);
+                    processUpdates();
+                }
+            } else {
+                circleData.set(key, { team: selectedTeam, value: coinsPerCircle });
+                updateCircleVisual(circle, selectedTeam);
+                processUpdates();
             }
         }
 
@@ -280,21 +619,41 @@
             }
         }
 
+        function processUpdates() {
+            updateStatsAndLeaderboard();
+            if (isAdmin) {
+                saveToCloud(); // رفع التغيير للسيرفر
+            }
+        }
+
+        function updateStoreUI() {
+            if (!isAdmin) return;
+            const btnCannon = document.getElementById('btn-buy-cannon');
+            const btnTeleport = document.getElementById('btn-buy-teleport');
+            const btnTrap = document.getElementById('btn-buy-trap');
+            
+            const currentCoins = teamCoinsGlobal[selectedTeam] || 0;
+            document.getElementById('store-team-coins').textContent = `${currentCoins} 💰`;
+
+            document.getElementById('cannon-price-display').textContent = `${cannonPrice} 💰`;
+            document.getElementById('teleport-price-display').textContent = `${teleportPrice} 💰`;
+            document.getElementById('trap-price-display').textContent = `${trapPrice} 💰`;
+
+            btnCannon.disabled = currentCoins < cannonPrice;
+            btnTeleport.disabled = currentCoins < teleportPrice;
+            btnTrap.disabled = currentCoins < trapPrice;
+        }
+
         function updateStatsAndLeaderboard() {
             const counts = new Array(teamCount).fill(0);
             const wins = new Array(teamCount).fill(0);
             const coins = new Array(teamCount).fill(0);
             
-            for(let i = 0; i < teamCount; i++) {
-                coins[i] = manualCoins[i] || 0;
-            }
-            
+            for(let i = 0; i < teamCount; i++) coins[i] = manualCoins[i] || 0;
             circleData.forEach(data => { 
-                if(data.team < teamCount) {
-                    counts[data.team]++;
-                    coins[data.team] += data.value; 
-                }
+                if(data.team < teamCount) { counts[data.team]++; coins[data.team] += data.value; }
             });
+            teamCoinsGlobal = [...coins];
 
             const directions = [[0,1], [1,0], [1,1], [1,-1]];
             for (let t = 0; t < teamCount; t++) {
@@ -302,27 +661,23 @@
                 for (let [key, data] of circleData) {
                     if (data.team !== t) continue;
                     const [r, c] = key.split('-').map(Number);
-                    
                     directions.forEach(([dr, dc], dIdx) => {
                         const line = [];
                         for(let i=0; i<4; i++) {
                             const nr = r + dr*i, nc = c + dc*i;
                             if (nr < 0 || nr >= gridRows || nc < 0 || nc >= gridCols) break;
                             const k = `${nr}-${nc}`;
-                            if(circleData.has(k) && circleData.get(k).team === t) line.push(k);
-                            else break;
+                            if(circleData.has(k) && circleData.get(k).team === t) line.push(k); else break;
                         }
                         if(line.length === 4) teamLines.push({line, dir: dIdx});
                     });
                 }
-                
                 const validLines = [];
                 teamLines.forEach(curr => {
                     let overlap = false;
                     for (let v of validLines) {
                         const shared = curr.line.filter(x => v.line.includes(x)).length;
-                        if (curr.dir === v.dir && shared > 0) overlap = true;
-                        else if (shared > 1) overlap = true;
+                        if (curr.dir === v.dir && shared > 0) overlap = true; else if (shared > 1) overlap = true;
                     }
                     if (!overlap) validLines.push(curr);
                 });
@@ -343,50 +698,33 @@
                 if(quotaEl && quotaContainer) {
                     let remaining = defaultQuota + (manualQuota[i] || 0) - (counts[i] || 0);
                     quotaEl.textContent = remaining;
-                    
                     if (remaining <= 0) {
                         quotaContainer.classList.replace('bg-blue-50', 'bg-red-50');
-                        quotaContainer.classList.replace('border-blue-100', 'border-red-100');
                         quotaContainer.classList.replace('text-blue-600', 'text-red-600');
                     } else {
                         quotaContainer.classList.replace('bg-red-50', 'bg-blue-50');
-                        quotaContainer.classList.replace('border-red-100', 'border-blue-100');
                         quotaContainer.classList.replace('text-red-600', 'text-blue-600');
                     }
                 }
             }
 
             renderLeaderboard(counts, wins, coins);
+            if(isAdmin) updateStoreUI(); 
         }
 
         function renderLeaderboard(counts, wins, coins) {
-            if (isLeaderboardAnimating) return;
             const list = document.getElementById('leaderboard-list');
-            const expandBtn = document.getElementById('leaderboard-expand-btn');
-            
             let teams = [];
-            for(let i=0; i<teamCount; i++) {
-                teams.push({ 
-                    id: i, 
-                    name: defaultTeamNames[i], 
-                    color: teamColors[i], 
-                    count: counts[i], 
-                    wins: wins[i],
-                    coins: coins[i]
-                });
-            }
+            for(let i=0; i<teamCount; i++) teams.push({ id: i, name: defaultTeamNames[i], color: teamColors[i], count: counts[i], wins: wins[i], coins: coins[i] });
             teams.sort((a, b) => b.wins - a.wins || b.count - a.count || a.id - b.id);
 
-            const showLimit = isLeaderboardExpanded ? 10 : 5;
-            const visibleTeams = teams.slice(0, showLimit);
-
+            const visibleTeams = teams.slice(0, isLeaderboardExpanded ? 10 : 5);
             list.innerHTML = visibleTeams.map((t, idx) => {
-                const rank = idx + 1;
                 const isWinner = t.wins > 0;
                 return `
                     <div class="leaderboard-item flex items-center justify-between p-3 cursor-default">
                         <div class="flex items-center gap-2 overflow-hidden w-full">
-                            <span class="font-bold text-gray-400 w-5 text-center text-sm">${rank}</span>
+                            <span class="font-bold text-gray-400 w-5 text-center text-sm">${idx + 1}</span>
                             <div class="w-6 h-6 rounded-full flex-shrink-0 shadow-sm border border-white" style="background-color: ${t.color}"></div>
                             <div class="flex-1 min-w-0">
                                 <div class="font-bold text-gray-800 text-xs truncate">${t.name}</div>
@@ -396,81 +734,132 @@
                                  <div class="text-base font-black ${isWinner ? 'text-indigo-600' : 'text-gray-300'}">${t.wins}</div>
                             </div>
                         </div>
-                    </div>
-                `;
+                    </div>`;
             }).join('');
 
+            const expandBtn = document.getElementById('leaderboard-expand-btn');
             if (teamCount > 5) {
                 expandBtn.classList.remove('hidden');
                 expandBtn.innerText = isLeaderboardExpanded ? "عرض أقل ↑" : "عرض الـ 10 الأوائل ↓";
-                expandBtn.onclick = () => {
-                    isLeaderboardExpanded = !isLeaderboardExpanded;
-                    renderLeaderboard(counts, wins, coins);
-                };
-            } else {
-                expandBtn.classList.add('hidden');
-            }
+                expandBtn.onclick = () => { isLeaderboardExpanded = !isLeaderboardExpanded; renderLeaderboard(counts, wins, coins); };
+            } else { expandBtn.classList.add('hidden'); }
         }
 
-        // ==========================================
-        //  أكواد الاستقبال للاعبين (PeerJS)
-        // ==========================================
-        
-        // يجب أن تكون كلمة السر مطابقة للتي في ملف الإدارة
-        const myRoomId = "abdullah-board-secret-room-12345"; 
-        const peer = new Peer();
+        // الأزرار والتفاعلات
+        document.addEventListener('DOMContentLoaded', () => {
+            initCloud(); // بدء الاتصال بالسيرفر الجديد
+            createGrid();
+            initUI();
+            processUpdates();
 
-        const statusEl = document.getElementById('connection-status');
+            // المتجر
+            document.getElementById('btn-buy-cannon').onclick = () => {
+                if (teamCoinsGlobal[selectedTeam] >= cannonPrice) {
+                    activeWeapon = 'cannon'; isDeleteMode = false;
+                    document.getElementById('weapon-status').className = "bg-red-100 text-red-700 text-xs font-bold p-2 rounded-lg text-center animate-pulse mt-2";
+                    document.getElementById('weapon-status').textContent = "المدفع جاهز! اختر هدفاً بالساحة 🎯";
+                    document.getElementById('weapon-status').classList.remove('hidden');
+                }
+            };
+            document.getElementById('btn-buy-teleport').onclick = () => {
+                if (teamCoinsGlobal[selectedTeam] >= teleportPrice) {
+                    activeWeapon = 'teleport'; isDeleteMode = false;
+                    document.getElementById('weapon-status').className = "bg-blue-100 text-blue-700 text-xs font-bold p-2 rounded-lg text-center animate-pulse mt-2";
+                    document.getElementById('weapon-status').textContent = "التنقل السريع جاهز! اختر مكاناً فارغاً 🚀";
+                    document.getElementById('weapon-status').classList.remove('hidden');
+                }
+            };
+            document.getElementById('btn-buy-trap').onclick = () => {
+                if (teamCoinsGlobal[selectedTeam] >= trapPrice) {
+                    activeWeapon = 'trap'; isDeleteMode = false;
+                    document.getElementById('weapon-status').className = "bg-gray-100 text-gray-700 text-xs font-bold p-2 rounded-lg text-center animate-pulse mt-2";
+                    document.getElementById('weapon-status').textContent = "الفخ جاهز! اختر إحدى دوائرك لحمايتها 🕸️";
+                    document.getElementById('weapon-status').classList.remove('hidden');
+                }
+            };
 
-        peer.on('open', () => {
-            // محاولة الاتصال بغرفة الإدارة
-            const conn = peer.connect(myRoomId);
+            // الحذف واللون
+            document.getElementById('color-mode').onclick = () => {
+                isDeleteMode = false; activeWeapon = null;
+                document.getElementById('weapon-status').classList.add('hidden');
+                document.getElementById('color-mode').className = "flex-1 py-2 px-4 rounded-lg text-sm font-bold shadow-sm bg-white text-indigo-600 transition-all";
+                document.getElementById('delete-mode').className = "flex-1 py-2 px-4 rounded-lg text-sm font-bold text-gray-500 hover:text-gray-700 transition-all";
+                document.getElementById('delete-instructions').classList.add('hidden');
+            };
+            document.getElementById('delete-mode').onclick = () => {
+                isDeleteMode = true; activeWeapon = null;
+                document.getElementById('weapon-status').classList.add('hidden');
+                document.getElementById('delete-mode').className = "flex-1 py-2 px-4 rounded-lg text-sm font-bold shadow-sm bg-red-500 text-white transition-all";
+                document.getElementById('color-mode').className = "flex-1 py-2 px-4 rounded-lg text-sm font-bold text-gray-500 hover:text-gray-700 transition-all";
+                document.getElementById('delete-instructions').classList.remove('hidden');
+            };
+
+            // الإعدادات
+            const modal = document.getElementById('settings-modal');
+            const teamCountInput = document.getElementById('team-count-input');
+            const tSettings = document.getElementById('team-settings');
             
-            conn.on('open', () => {
-                statusEl.textContent = "متصل بنجاح 🟢";
-                statusEl.className = "fixed top-4 right-4 z-50 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-green-200 flex items-center gap-2";
-            });
+            function renderTeamSettingsInputs(count) {
+                tSettings.innerHTML = '';
+                for(let i = 0; i < count; i++) {
+                     tSettings.innerHTML += `
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-gray-400 w-4">${i+1}</span>
+                            <input type="color" id="col-${i}" value="${teamColors[i]}" class="w-8 h-8 rounded cursor-pointer border-0">
+                            <input type="text" id="nam-${i}" value="${defaultTeamNames[i]}" class="flex-1 px-3 py-1 border rounded text-sm focus:border-indigo-500 outline-none" placeholder="اسم الفريق">
+                        </div>`;
+                }
+            }
+            teamCountInput.oninput = (e) => renderTeamSettingsInputs(Math.min(30, parseInt(e.target.value) || 2));
+            
+            document.getElementById('settings-btn').onclick = () => {
+                document.getElementById('main-title-input').value = document.getElementById('main-title').textContent;
+                teamCountInput.value = teamCount; document.getElementById('grid-rows-input').value = gridRows;
+                document.getElementById('grid-cols-input').value = gridCols; document.getElementById('coins-per-circle-input').value = coinsPerCircle;
+                document.getElementById('default-quota-input').value = defaultQuota;
+                document.getElementById('cannon-price-input').value = cannonPrice;
+                document.getElementById('teleport-price-input').value = teleportPrice;
+                document.getElementById('trap-price-input').value = trapPrice;
+                renderTeamSettingsInputs(teamCount); modal.classList.remove('hidden');
+            };
+            document.getElementById('close-settings').onclick = () => modal.classList.add('hidden');
+            
+            document.getElementById('save-settings').onclick = () => {
+                document.getElementById('main-title').textContent = document.getElementById('main-title-input').value;
+                document.getElementById('subtitle').textContent = document.getElementById('subtitle-input').value;
+                teamCount = Math.max(2, Math.min(30, parseInt(teamCountInput.value)));
+                const oldRows = gridRows, oldCols = gridCols;
+                gridRows = Math.max(5, Math.min(50, parseInt(document.getElementById('grid-rows-input').value)));
+                gridCols = Math.max(5, Math.min(60, parseInt(document.getElementById('grid-cols-input').value)));
+                coinsPerCircle = Math.max(1, parseInt(document.getElementById('coins-per-circle-input').value));
+                defaultQuota = Math.max(1, parseInt(document.getElementById('default-quota-input').value));
+                cannonPrice = Math.max(1, parseInt(document.getElementById('cannon-price-input').value));
+                teleportPrice = Math.max(1, parseInt(document.getElementById('teleport-price-input').value));
+                trapPrice = Math.max(1, parseInt(document.getElementById('trap-price-input').value));
 
-            // عندما يستلم المشاهد بيانات جديدة من الإدارة
-            conn.on('data', (data) => {
-                
-                // 1. تحديث الإعدادات
-                teamColors = data.teamColors;
-                defaultTeamNames = data.names;
-                teamCount = data.teamCount;
-                gridRows = data.gridRows;
-                gridCols = data.gridCols;
-                manualCoins = data.manualCoins;
-                manualQuota = data.manualQuota;
-                coinsPerCircle = data.coinsPerCircle;
-                defaultQuota = data.defaultQuota;
+                for(let i = 0; i < teamCount; i++) {
+                    teamColors[i] = document.getElementById(`col-${i}`)?.value || teamColors[i];
+                    defaultTeamNames[i] = document.getElementById(`nam-${i}`)?.value || defaultTeamNames[i];
+                }
+                if (oldRows !== gridRows || oldCols !== gridCols) {
+                    createGrid();
+                    for (let [key, data] of circleData) {
+                        const [r, c] = key.split('-').map(Number);
+                        if (r >= gridRows || c >= gridCols) circleData.delete(key);
+                    }
+                }
+                initUI(); processUpdates(); modal.classList.add('hidden');
+                circleData.forEach((data, key) => { const el = document.querySelector(`.circle[data-key="${key}"]`); if(el) updateCircleVisual(el, data.team); });
+            };
 
-                document.getElementById('main-title').textContent = data.title;
-                document.getElementById('subtitle').textContent = data.subtitle;
-
-                // 2. تحديث الدوائر
-                circleData = new Map(data.circles);
-                
-                // 3. إعادة رسم اللوحة والإعدادات
-                createGrid();
-                initUI();
-                
-                // 4. تلوين الدوائر بناءً على البيانات المستلمة
-                circleData.forEach((val, key) => {
-                    const el = document.querySelector(`.circle[data-key="${key}"]`);
-                    if(el) updateCircleVisual(el, val.team);
-                });
-
-                // 5. تحديث الأرقام ولوحة الصدارة
-                updateStatsAndLeaderboard();
-            });
-
-            conn.on('close', () => {
-                statusEl.textContent = "فُقد الاتصال بالإدارة 🔴";
-                statusEl.className = "fixed top-4 right-4 z-50 bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-red-200 flex items-center gap-2";
-            });
+            document.getElementById('clear-btn').onclick = () => {
+                if(confirm("مسح اللوحة بالكامل؟")) {
+                    circleData.clear(); trapData.clear(); manualCoins.fill(0); manualQuota.fill(0);
+                    document.querySelectorAll('.circle').forEach(c => updateCircleVisual(c, null));
+                    processUpdates(); modal.classList.add('hidden');
+                }
+            };
         });
-
     </script>
  </body>
 </html>
