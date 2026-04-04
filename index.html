@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة رصيدي - شاشة اللاعبين</title>
+  <script src="/_sdk/data_sdk.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- إضافة مكتبة PeerJS للاستقبال -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+        /* إعدادات أساسية */
+        :root {
+            --circle-size: 1.5vw;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+            overflow-x: hidden;
+        }
+
+        /* --- تصميم الدوائر --- */
+        .circle {
+            width: var(--circle-size); 
+            height: var(--circle-size);
+            min-width: 10px;
+            min-height: 10px;
+            max-width: 45px;
+            max-height: 45px;
+            border-radius: 50%;
+            border: 1px solid #d1d5db;
+            background-color: transparent;
+            display: inline-block;
+            margin: 1px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: default; /* منع مؤشر الماوس من الإيحاء بأنه قابل للضغط */
+        }
+
+        /* حاوية الشبكة */
+        .grid-wrapper {
+            background: white;
+            border-radius: 1rem;
+            padding: 0.25rem; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            display: flex;
+            justify-content: center;
+            overflow-x: auto;
+            width: 100%;
+        }
+
+        .grid-row {
+            display: flex;
+            justify-content: center;
+            white-space: nowrap;
+        }
+
+        /* --- تصميم الأزرار والبطاقات --- */
+        .card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            border: 1px solid #e5e7eb;
+            overflow: hidden;
+        }
+
+        .team-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 7rem;
+            padding: 0.5rem 0.2rem;
+            border-radius: 0.75rem;
+            border: 2px solid transparent;
+            background-color: #ffffff;
+            transition: all 0.2s ease;
+            position: relative;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            pointer-events: none; /* يمنع الضغط على الأزرار للمشاهد */
+        }
+
+        .team-btn-indicator {
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 50%;
+            background-color: var(--team-color);
+            margin-bottom: 0.25rem;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .team-btn-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #4b5563;
+            text-align: center;
+            line-height: 1.1;
+            width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* إخفاء أزرار الزيادة والنقصان في شاشة اللاعبين */
+        .btn-minus, .btn-plus, .quota-minus, .quota-plus {
+            display: none !important;
+        }
+
+        /* --- لوحة الصدارة --- */
+        .leaderboard-item {
+            transition: all 0.3s ease;
+            border-bottom: 1px solid #f3f4f6;
+            padding: 0.75rem;
+        }
+        .leaderboard-item:last-child { border-bottom: none; }
+        
+        .expand-btn {
+            width: 100%;
+            padding: 0.75rem;
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #6b7280;
+            cursor: pointer;
+            border-top: 1px solid #f3f4f6;
+            transition: background 0.2s;
+        }
+
+        @media (max-width: 640px) {
+            .grid-wrapper { padding: 0.25rem; }
+            .team-btn { width: 6.5rem; }
+        }
+    </style>
+ </head>
+ <body class="min-h-screen pb-10">
+   
+   <!-- حالة الاتصال للمشاهد -->
+   <div id="connection-status" class="fixed top-4 right-4 z-50 bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-amber-200 flex items-center gap-2">
+       جاري الاتصال بلوحة الإدارة...
+   </div>
+
+   <!-- المحتوى الرئيسي -->
+   <div class="max-w-[1800px] mx-auto p-2 lg:p-4 space-y-4">
+     
+     <!-- الهيدر -->
+     <header class="text-center py-2">
+        <h1 id="main-title" class="text-3xl md:text-4xl font-extrabold text-gray-900 tracking-tight mb-2">لوحة رصيدي</h1>
+        <p id="subtitle" class="text-gray-500 text-sm md:text-base"></p>
+     </header>
+
+     <!-- أدوات التحكم والفرق -->
+     <div class="card p-4 flex flex-col items-center w-full shadow-lg border-indigo-50">
+        <!-- اختيار الفرق -->
+        <div class="w-full">
+            <div id="team-selection-container" class="flex flex-wrap justify-center gap-2">
+                <!-- سيتم رسم الفرق تلقائياً من الإدارة -->
+            </div>
+        </div>
+     </div>
+
+     <!-- التخطيط السفلي -->
+     <div class="flex flex-col lg:flex-row gap-3 items-start">
+        
+        <!-- العمود الجانبي (لوحة الصدارة) - تم إزالة المتجر -->
+        <div class="w-full lg:w-60 flex-shrink-0 order-1 lg:order-1">
+            <div class="sticky top-4 space-y-4">
+                
+                <!-- بطاقة لوحة الصدارة -->
+                <div class="card">
+                    <div class="bg-gray-50/50 p-3 border-b border-gray-100 flex justify-between items-center">
+                        <h3 class="font-bold text-gray-800 text-base flex items-center gap-2">
+                            <span>🏆</span> الصدارة
+                        </h3>
+                    </div>
+                    <div id="leaderboard-list" class="divide-y divide-gray-50">
+                        <!-- سيتم تحديث القائمة تلقائياً -->
+                    </div>
+                    <div id="leaderboard-expand-btn" class="expand-btn hidden">
+                        عرض الـ 10 الأوائل ↓
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- العمود الرئيسي (الساحة) -->
+        <div class="flex-1 w-full space-y-4 order-2 lg:order-2">
+            <div class="grid-wrapper">
+                <div id="circles-grid" class="flex flex-col items-center">
+                    <!-- سيتم رسم الدوائر تلقائياً -->
+                </div>
+            </div>
+        </div>
+
+     </div>
+
+   </div>
+
+  <script>
+        // إعدادات المتغيرات الأولية
+        let teamColors = [];
+        let defaultTeamNames = [];
+        let teamCount = 0;
+        let gridRows = 24; 
+        let gridCols = 43; 
+        let coinsPerCircle = 5; 
+        let defaultQuota = 30; 
+        
+        let circleData = new Map();
+        let manualCoins = new Array(30).fill(0); 
+        let manualQuota = new Array(30).fill(0); 
+        
+        let isLeaderboardAnimating = false;
+        let isLeaderboardExpanded = false;
+
+        function initUI() {
+            const selectContainer = document.getElementById('team-selection-container');
+            selectContainer.innerHTML = '';
+            
+            for(let i = 0; i < teamCount; i++) {
+                const btn = document.createElement('button');
+                btn.className = `team-btn`;
+                btn.style.setProperty('--team-color', teamColors[i]);
+                
+                // تم إزالة أزرار (-) و (+) بالكامل لأن هذا ملف المشاهدين
+                btn.innerHTML = `
+                    <div class="team-btn-indicator"></div>
+                    <span class="team-btn-label mb-1">${defaultTeamNames[i]}</span>
+                    <div class="flex flex-col w-full px-1 text-[10px] font-bold text-gray-500 border-t border-gray-100 pt-1 gap-1">
+                        
+                        <div class="flex justify-between w-full">
+                            <div title="الدوائر الملونة" class="flex items-center"><span>●</span> <span id="btn-count-${i}" class="mr-0.5">0</span></div>
+                            <div title="الانتصارات" class="flex items-center text-indigo-600"><span>🏆</span> <span id="btn-wins-${i}" class="mr-0.5">0</span></div>
+                        </div>
+
+                        <div id="quota-container-${i}" class="flex items-center justify-between bg-blue-50 text-blue-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-blue-100 transition-colors">
+                            <div title="رصيد الدوائر المتبقي" class="flex items-center font-bold w-full justify-center"><span>⭕</span> <span id="btn-quota-${i}" class="mr-1">0</span></div>
+                        </div>
+
+                        <div class="flex items-center justify-between bg-amber-50 text-amber-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-amber-100">
+                            <div title="إجمالي الأموال" class="flex items-center font-bold w-full justify-center"><span>💰</span> <span id="btn-coins-${i}" class="mr-1">0</span></div>
+                        </div>
+                    </div>
+                `;
+                
+                selectContainer.appendChild(btn);
+            }
+        }
+
+        function createGrid() {
+            const grid = document.getElementById('circles-grid');
+            grid.innerHTML = '';
+            
+            const estimatedSize = Math.max(1.0, 65 / gridCols); 
+            document.documentElement.style.setProperty('--circle-size', `${estimatedSize}vw`);
+
+            for (let row = 0; row < gridRows; row++) {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'grid-row';
+                for (let col = 0; col < gridCols; col++) {
+                    const circle = document.createElement('div');
+                    circle.className = 'circle';
+                    circle.dataset.key = `${row}-${col}`;
+                    rowDiv.appendChild(circle);
+                }
+                grid.appendChild(rowDiv);
+            }
+        }
+
+        function updateCircleVisual(element, teamIndex) {
+            if (teamIndex === null || teamIndex >= teamCount) {
+                element.style.backgroundColor = 'transparent';
+                element.style.borderColor = '#d1d5db';
+            } else {
+                element.style.backgroundColor = teamColors[teamIndex];
+                element.style.borderColor = teamColors[teamIndex];
+            }
+        }
+
+        function updateStatsAndLeaderboard() {
+            const counts = new Array(teamCount).fill(0);
+            const wins = new Array(teamCount).fill(0);
+            const coins = new Array(teamCount).fill(0);
+            
+            for(let i = 0; i < teamCount; i++) {
+                coins[i] = manualCoins[i] || 0;
+            }
+            
+            circleData.forEach(data => { 
+                if(data.team < teamCount) {
+                    counts[data.team]++;
+                    coins[data.team] += data.value; 
+                }
+            });
+
+            const directions = [[0,1], [1,0], [1,1], [1,-1]];
+            for (let t = 0; t < teamCount; t++) {
+                const teamLines = [];
+                for (let [key, data] of circleData) {
+                    if (data.team !== t) continue;
+                    const [r, c] = key.split('-').map(Number);
+                    
+                    directions.forEach(([dr, dc], dIdx) => {
+                        const line = [];
+                        for(let i=0; i<4; i++) {
+                            const nr = r + dr*i, nc = c + dc*i;
+                            if (nr < 0 || nr >= gridRows || nc < 0 || nc >= gridCols) break;
+                            const k = `${nr}-${nc}`;
+                            if(circleData.has(k) && circleData.get(k).team === t) line.push(k);
+                            else break;
+                        }
+                        if(line.length === 4) teamLines.push({line, dir: dIdx});
+                    });
+                }
+                
+                const validLines = [];
+                teamLines.forEach(curr => {
+                    let overlap = false;
+                    for (let v of validLines) {
+                        const shared = curr.line.filter(x => v.line.includes(x)).length;
+                        if (curr.dir === v.dir && shared > 0) overlap = true;
+                        else if (shared > 1) overlap = true;
+                    }
+                    if (!overlap) validLines.push(curr);
+                });
+                wins[t] = validLines.length;
+            }
+
+            for (let i = 0; i < teamCount; i++) {
+                const countEl = document.getElementById(`btn-count-${i}`);
+                const winsEl = document.getElementById(`btn-wins-${i}`);
+                const coinsEl = document.getElementById(`btn-coins-${i}`);
+                const quotaEl = document.getElementById(`btn-quota-${i}`);
+                const quotaContainer = document.getElementById(`quota-container-${i}`);
+                
+                if(countEl) countEl.textContent = counts[i] || 0;
+                if(winsEl) winsEl.textContent = wins[i] || 0;
+                if(coinsEl) coinsEl.textContent = coins[i] || 0;
+                
+                if(quotaEl && quotaContainer) {
+                    let remaining = defaultQuota + (manualQuota[i] || 0) - (counts[i] || 0);
+                    quotaEl.textContent = remaining;
+                    
+                    if (remaining <= 0) {
+                        quotaContainer.classList.replace('bg-blue-50', 'bg-red-50');
+                        quotaContainer.classList.replace('border-blue-100', 'border-red-100');
+                        quotaContainer.classList.replace('text-blue-600', 'text-red-600');
+                    } else {
+                        quotaContainer.classList.replace('bg-red-50', 'bg-blue-50');
+                        quotaContainer.classList.replace('border-red-100', 'border-blue-100');
+                        quotaContainer.classList.replace('text-red-600', 'text-blue-600');
+                    }
+                }
+            }
+
+            renderLeaderboard(counts, wins, coins);
+        }
+
+        function renderLeaderboard(counts, wins, coins) {
+            if (isLeaderboardAnimating) return;
+            const list = document.getElementById('leaderboard-list');
+            const expandBtn = document.getElementById('leaderboard-expand-btn');
+            
+            let teams = [];
+            for(let i=0; i<teamCount; i++) {
+                teams.push({ 
+                    id: i, 
+                    name: defaultTeamNames[i], 
+                    color: teamColors[i], 
+                    count: counts[i], 
+                    wins: wins[i],
+                    coins: coins[i]
+                });
+            }
+            teams.sort((a, b) => b.wins - a.wins || b.count - a.count || a.id - b.id);
+
+            const showLimit = isLeaderboardExpanded ? 10 : 5;
+            const visibleTeams = teams.slice(0, showLimit);
+
+            list.innerHTML = visibleTeams.map((t, idx) => {
+                const rank = idx + 1;
+                const isWinner = t.wins > 0;
+                return `
+                    <div class="leaderboard-item flex items-center justify-between p-3 cursor-default">
+                        <div class="flex items-center gap-2 overflow-hidden w-full">
+                            <span class="font-bold text-gray-400 w-5 text-center text-sm">${rank}</span>
+                            <div class="w-6 h-6 rounded-full flex-shrink-0 shadow-sm border border-white" style="background-color: ${t.color}"></div>
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-gray-800 text-xs truncate">${t.name}</div>
+                                <div class="text-[10px] text-gray-500">${t.count} دائرة • <span class="text-amber-500 font-bold">${t.coins} 💰</span></div>
+                            </div>
+                            <div class="text-right flex-shrink-0 ml-1">
+                                 <div class="text-base font-black ${isWinner ? 'text-indigo-600' : 'text-gray-300'}">${t.wins}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            if (teamCount > 5) {
+                expandBtn.classList.remove('hidden');
+                expandBtn.innerText = isLeaderboardExpanded ? "عرض أقل ↑" : "عرض الـ 10 الأوائل ↓";
+                expandBtn.onclick = () => {
+                    isLeaderboardExpanded = !isLeaderboardExpanded;
+                    renderLeaderboard(counts, wins, coins);
+                };
+            } else {
+                expandBtn.classList.add('hidden');
+            }
+        }
+
+        // ==========================================
+        //  أكواد الاستقبال للاعبين (PeerJS)
+        // ==========================================
+        
+        // يجب أن تكون كلمة السر مطابقة للتي في ملف الإدارة
+        const myRoomId = "abdullah-board-secret-room-12345"; 
+        const peer = new Peer();
+
+        const statusEl = document.getElementById('connection-status');
+
+        peer.on('open', () => {
+            // محاولة الاتصال بغرفة الإدارة
+            const conn = peer.connect(myRoomId);
+            
+            conn.on('open', () => {
+                statusEl.textContent = "متصل بنجاح 🟢";
+                statusEl.className = "fixed top-4 right-4 z-50 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-green-200 flex items-center gap-2";
+            });
+
+            // عندما يستلم المشاهد بيانات جديدة من الإدارة
+            conn.on('data', (data) => {
+                
+                // 1. تحديث الإعدادات
+                teamColors = data.teamColors;
+                defaultTeamNames = data.names;
+                teamCount = data.teamCount;
+                gridRows = data.gridRows;
+                gridCols = data.gridCols;
+                manualCoins = data.manualCoins;
+                manualQuota = data.manualQuota;
+                coinsPerCircle = data.coinsPerCircle;
+                defaultQuota = data.defaultQuota;
+
+                document.getElementById('main-title').textContent = data.title;
+                document.getElementById('subtitle').textContent = data.subtitle;
+
+                // 2. تحديث الدوائر
+                circleData = new Map(data.circles);
+                
+                // 3. إعادة رسم اللوحة والإعدادات
+                createGrid();
+                initUI();
+                
+                // 4. تلوين الدوائر بناءً على البيانات المستلمة
+                circleData.forEach((val, key) => {
+                    const el = document.querySelector(`.circle[data-key="${key}"]`);
+                    if(el) updateCircleVisual(el, val.team);
+                });
+
+                // 5. تحديث الأرقام ولوحة الصدارة
+                updateStatsAndLeaderboard();
+            });
+
+            conn.on('close', () => {
+                statusEl.textContent = "فُقد الاتصال بالإدارة 🔴";
+                statusEl.className = "fixed top-4 right-4 z-50 bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-red-200 flex items-center gap-2";
+            });
+        });
+
+    </script>
+ </body>
+</html>
