@@ -183,7 +183,7 @@
                     <div id="leaderboard-expand-btn" class="expand-btn hidden">عرض الـ 10 الأوائل ↓</div>
                 </div>
 
-                <div class="card bg-white border-2 border-amber-100 shadow-lg admin-only hidden" id="store-card">
+                <div class="card bg-white border-2 border-amber-100 shadow-lg" id="store-card">
                     <div class="bg-amber-50 p-3 border-b border-amber-100 flex justify-between items-center">
                         <h3 class="font-bold text-amber-800 text-base flex items-center gap-2"><span>🛒</span> متجر المكافآت</h3>
                         <span class="text-xs font-bold bg-amber-200 text-amber-800 px-2 py-1 rounded-full" id="store-team-coins">0 💰</span>
@@ -302,6 +302,7 @@
                 teamColors, defaultTeamNames, teamCount, gridRows, gridCols,
                 manualCoins, manualQuota, coinsPerCircle, defaultQuota,
                 cannonPrice, teleportPrice, trapPrice,
+                selectedTeam,
                 title: document.getElementById('main-title').textContent,
                 subtitle: document.getElementById('subtitle').textContent,
                 timestamp: Date.now()
@@ -324,6 +325,7 @@
             cannonPrice = data.cannonPrice || cannonPrice;
             teleportPrice = data.teleportPrice || teleportPrice;
             trapPrice = data.trapPrice || trapPrice;
+            selectedTeam = data.selectedTeam !== undefined ? data.selectedTeam : selectedTeam;
 
             document.getElementById('main-title').textContent = data.title || "لوحة رصيدي";
             document.getElementById('subtitle').textContent = data.subtitle || "";
@@ -488,6 +490,7 @@
                         btn.classList.add('active');
                         selectedTeam = i;
                         updateStoreUI(); 
+                        processUpdates();
                     };
                 }
                 selectContainer.appendChild(btn);
@@ -627,7 +630,6 @@
         }
 
         function updateStoreUI() {
-            if (!isAdmin) return;
             const btnCannon = document.getElementById('btn-buy-cannon');
             const btnTeleport = document.getElementById('btn-buy-teleport');
             const btnTrap = document.getElementById('btn-buy-trap');
@@ -639,9 +641,15 @@
             document.getElementById('teleport-price-display').textContent = `${teleportPrice} 💰`;
             document.getElementById('trap-price-display').textContent = `${trapPrice} 💰`;
 
-            btnCannon.disabled = currentCoins < cannonPrice;
-            btnTeleport.disabled = currentCoins < teleportPrice;
-            btnTrap.disabled = currentCoins < trapPrice;
+            if (!isAdmin) {
+                btnCannon.disabled = true;
+                btnTeleport.disabled = true;
+                btnTrap.disabled = true;
+            } else {
+                btnCannon.disabled = currentCoins < cannonPrice;
+                btnTeleport.disabled = currentCoins < teleportPrice;
+                btnTrap.disabled = currentCoins < trapPrice;
+            }
         }
 
         function updateStatsAndLeaderboard() {
@@ -709,7 +717,7 @@
             }
 
             renderLeaderboard(counts, wins, coins);
-            if(isAdmin) updateStoreUI(); 
+            updateStoreUI(); 
         }
 
         function renderLeaderboard(counts, wins, coins) {
