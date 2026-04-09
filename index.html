@@ -1,884 +1,1140 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
- <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>لوحة رصيدي التفاعلية</title>
-  <!-- مكتبة السيرفر السحابي المجاني (MQTT) -->
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-        /* إعدادات أساسية */
-        :root { --circle-size: 1.5vw; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; color: #1f2937; overflow-x: hidden; }
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>نظام البث الرياضي التفاعلي</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- مكتبات React الأساسية -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- مكتبة MQTT للمزامنة الفورية -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
-        /* --- تصميم الدوائر --- */
-        .circle {
-            width: var(--circle-size); height: var(--circle-size);
-            min-width: 10px; min-height: 10px; max-width: 45px; max-height: 45px;
-            border-radius: 50%; border: 1px solid #d1d5db; background-color: transparent;
-            display: inline-block; margin: 1px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .circle:hover { transform: scale(1.15); z-index: 5; }
-        .circle.clicked { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-
-        @keyframes pop {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.5); }
-            100% { transform: scale(1); }
-        }
-
-        /* حاوية الشبكة - تم حل مشكلة القص في الجوال هنا */
-        .grid-wrapper {
-            background: white; border-radius: 1rem; padding: 0.5rem; 
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            display: flex; overflow-x: auto; width: 100%;
-            -webkit-overflow-scrolling: touch;
-            /* لا تضع justify-content: center هنا أبدًا لأنها تسبب القص */
-        }
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #020617; } /* slate-950 */
         
-        #circles-grid {
-            display: flex;
-            flex-direction: column;
-            /* هذه الخاصية هي السحر: توسّط اللوحة في الشاشات الكبيرة، وتمنع القص في الجوال */
-            margin: auto;
-            padding: 0 10px; /* مسافة بسيطة لكي لا تلتصق الدوائر بحافة الشاشة */
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
         }
+        .animate-float { animation: float 4s ease-in-out infinite; }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(37, 99, 235, 0.15); }
+            50% { box-shadow: 0 0 45px rgba(37, 99, 235, 0.4); }
+        }
+        .animate-pulse-glow { animation: pulse-glow 3s infinite; }
         
-        .grid-row { display: flex; white-space: nowrap; }
-
-        /* --- تصميم الأزرار والبطاقات --- */
-        .card { background: white; border-radius: 1rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); border: 1px solid #e5e7eb; overflow: hidden; }
-
-        .team-btn {
-            display: flex; flex-direction: column; align-items: center; justify-content: center; width: 7rem; padding: 0.5rem 0.2rem;
-            border-radius: 0.75rem; border: 2px solid transparent; background-color: #ffffff; transition: all 0.2s ease; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        @keyframes pop-in {
+            0% { opacity: 0; transform: scale(0.5); }
+            70% { transform: scale(1.2); }
+            100% { opacity: 1; transform: scale(1); }
         }
-        .team-btn.active { border-color: var(--team-color); background-color: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); transform: translateY(-2px); }
-        .team-btn-indicator { width: 1.5rem; height: 1.5rem; border-radius: 50%; background-color: var(--team-color); margin-bottom: 0.25rem; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .team-btn.active .team-btn-indicator { transform: scale(1.1); }
-        .team-btn-label { font-size: 0.75rem; font-weight: 700; color: #4b5563; text-align: center; line-height: 1.1; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .team-btn.active .team-btn-label { color: var(--team-color); }
+        .animate-pop-in { animation: pop-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
-        @keyframes shake { 0%, 100% { transform: translateY(-2px) translateX(0); } 25% { transform: translateY(-2px) translateX(-4px); } 75% { transform: translateY(-2px) translateX(4px); } }
-        .shake-anim { animation: shake 0.3s ease-in-out; border-color: #ef4444 !important; background-color: #fef2f2 !important; }
-
-        /* --- تأثير تحطم الفخ --- */
-        @keyframes trapShatter {
-            0% { transform: scale(1) rotate(0deg); opacity: 1; }
-            20% { transform: scale(1.5) rotate(-20deg); filter: brightness(1.5); }
-            40% { transform: scale(1.5) rotate(20deg); }
-            60% { transform: scale(1.8) rotate(-20deg); opacity: 0.8; }
-            100% { transform: scale(3) rotate(45deg); opacity: 0; filter: brightness(0.5); }
+        @keyframes goal-overlay {
+            0% { opacity: 0; transform: scale(0.5) translateY(100px); filter: blur(20px); }
+            10% { opacity: 1; transform: scale(1.1) translateY(0); filter: blur(0); }
+            15% { transform: scale(1); }
+            85% { opacity: 1; transform: scale(1); filter: blur(0); }
+            100% { opacity: 0; transform: scale(1.3) translateY(-100px); filter: blur(20px); }
         }
-        .trap-shatter {
-            animation: trapShatter 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards !important;
-            display: flex !important; align-items: center; justify-content: center; font-size: min(2vw, 24px);
-            z-index: 50 !important; box-shadow: 0 0 20px rgba(239, 68, 68, 0.8) !important; color: white; text-shadow: 0px 0px 5px rgba(0,0,0,0.8);
+        .animate-goal { animation: goal-overlay 6s ease-in-out forwards; }
+        
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
-
-        /* --- لوحة الصدارة --- */
-        .leaderboard-item { transition: all 0.3s ease; border-bottom: 1px solid #f3f4f6; padding: 0.75rem; }
-        .leaderboard-item:last-child { border-bottom: none; }
-        .leaderboard-item:hover { background-color: #f9fafb; }
-        .expand-btn { width: 100%; padding: 0.75rem; text-align: center; font-size: 0.85rem; font-weight: 600; color: #6b7280; cursor: pointer; border-top: 1px solid #f3f4f6; transition: background 0.2s; }
-
-        @media (max-width: 640px) { .grid-wrapper { padding: 0.25rem; } .team-btn { width: 6.5rem; } }
+        .animate-spin-slow { animation: spin-slow 8s linear infinite; }
     </style>
- </head>
- <body class="min-h-screen pb-10">
-   
-   <!-- حالة السحابة (تنبيه مرئي) -->
-   <div id="cloud-status" class="fixed top-4 right-4 z-50 bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-amber-200 flex items-center gap-2">
-       جاري الاتصال بالسيرفر...
-   </div>
+</head>
+<body class="text-white font-sans overflow-hidden">
+    
+    <div id="root"></div>
 
-   <!-- زر الإعدادات (مخفي للمشاهدين) -->
-   <button id="settings-btn" class="fixed top-4 left-4 z-50 bg-white p-2 rounded-full shadow-md hover:bg-gray-50 transition-colors border border-gray-200 admin-only hidden" title="الإعدادات">
-    <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-   </button>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
 
-   <!-- نافذة الإعدادات -->
-   <div id="settings-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl transform scale-100 transition-all flex flex-col max-h-[90vh]">
-      <div class="p-6 border-b">
-       <div class="flex justify-between items-center">
-        <h2 class="text-xl font-bold text-gray-800">إعدادات اللوحة</h2>
-        <button id="close-settings" class="text-gray-400 hover:text-gray-600 transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
-       </div>
-      </div>
-      <div class="p-6 overflow-y-auto custom-scrollbar">
-          <div class="space-y-4">
-              <div><label class="block text-sm font-medium text-gray-700 mb-1">العنوان الرئيسي</label> <input type="text" id="main-title-input" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"></div>
-              <div><label class="block text-sm font-medium text-gray-700 mb-1">الوصف الفرعي</label> <input type="text" id="subtitle-input" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"></div>
+        const LOGO_OPTIONS = ['', '🦅', '🦁', '🐺', '🦈', '🐯', '🐉', '⚔️', '⚽', '⭐', '🛡️', '👑', '⚓'];
+
+        const initialData = {
+          leagueName: "دوري أبطال النخبة",
+          currentMatch: {
+            homeTeam: "نادي الصقور",
+            homeLogo: "🦅", 
+            awayTeam: "فريق النجوم",
+            awayLogo: "⭐", 
+            homeScore: 0,
+            awayScore: 0,
+            period: "لم تبدأ",
+            isLive: false
+          },
+          nextMatch: {
+            homeTeam: "اتحاد العاصمة",
+            awayTeam: "شباب المجد",
+            time: "قريباً",
+            date: "الجولة الأولى"
+          },
+          schedule: [],
+          currentScheduleIndex: 0,
+          rounds: 1,
+          standings: [
+            { rank: 1, team: "نادي الصقور", logo: "🦅", played: 0, win: 0, draw: 0, lose: 0, points: 0, form: 'same', players: ["أحمد عبدالله", "سالم الدوسري"] },
+            { rank: 2, team: "فريق النجوم", logo: "⭐", played: 0, win: 0, draw: 0, lose: 0, points: 0, form: 'same', players: ["خالد سعيد", "فهد المولد"] },
+            { rank: 3, team: "شباب المجد", logo: "🛡️", played: 0, win: 0, draw: 0, lose: 0, points: 0, form: 'same', players: ["ياسر محمد", "أشرف حكيمي"] },
+            { rank: 4, team: "اتحاد العاصمة", logo: "⚔️", played: 0, win: 0, draw: 0, lose: 0, points: 0, form: 'same', players: ["عمر عبدالرحمن"] },
+            { rank: 5, team: "أشبال الوطن", logo: "🦁", played: 0, win: 0, draw: 0, lose: 0, points: 0, form: 'same', players: ["محمد صلاح", "رياض محرز"] },
+          ],
+          recentMatches: [],
+          topScorers: [
+            { name: "أحمد عبدالله", team: "نادي الصقور", goals: 14 },
+            { name: "خالد سعيد", team: "فريق النجوم", goals: 12 },
+            { name: "ياسر محمد", team: "شباب المجد", goals: 9 },
+          ],
+          topAssists: [
+            { name: "سالم الدوسري", team: "نادي الصقور", assists: 10 },
+            { name: "عمر عبدالرحمن", team: "اتحاد العاصمة", assists: 8 },
+            { name: "فهد المولد", team: "فريق النجوم", assists: 7 },
+          ]
+        };
+
+        function App() {
+          const [role, setRole] = useState('setup'); 
+          const [roomId, setRoomId] = useState('');
+          const [inputRoomCode, setInputRoomCode] = useState('');
+          const [mqttClient, setMqttClient] = useState(null);
+          const hasInitialStateLoaded = useRef(false);
+
+          const [data, setData] = useState(initialData);
+          const [matchSeconds, setMatchSeconds] = useState(0);
+          const [isTimerRunning, setIsTimerRunning] = useState(false);
+          const [goalAnimation, setGoalAnimation] = useState(null);
+
+          const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+          const [activeSettingsTab, setActiveSettingsTab] = useState('match');
+          const [toastMessage, setToastMessage] = useState('');
+          const [activeGoalTeam, setActiveGoalTeam] = useState(null);
+          const [goalScorer, setGoalScorer] = useState('none');
+          const [goalAssister, setGoalAssister] = useState('none');
+          const [selectedSquadTeam, setSelectedSquadTeam] = useState(initialData.standings[0].team);
+          const [newPlayerName, setNewPlayerName] = useState('');
+
+          const connectToRoom = (targetRole, targetRoomId, isNew = false) => {
+              if (!targetRoomId) {
+                  showToast("الرجاء إدخال كود الغرفة");
+                  return;
+              }
+              setRoomId(targetRoomId);
+              setRole(targetRole);
+
+              if (isNew) {
+                  hasInitialStateLoaded.current = true;
+              } else {
+                  hasInitialStateLoaded.current = false;
+              }
+
+              showToast("جاري الاتصال بسيرفر البث...");
+              const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt'); 
+
+              client.on('connect', () => {
+                  client.subscribe(`dory_sports_league_${targetRoomId}`);
+                  showToast(targetRole === 'admin' ? "تم الاتصال بنجاح كمسؤول!" : "تم الاتصال بنجاح كمشاهد!");
+              });
+
+              client.on('message', (topic, message) => {
+                  try {
+                      const payload = JSON.parse(message.toString());
+                      
+                      if (targetRole === 'viewer' || (targetRole === 'admin' && !hasInitialStateLoaded.current)) {
+                          setData(payload.data);
+                          setMatchSeconds(payload.matchSeconds);
+                          setIsTimerRunning(payload.isTimerRunning);
+                          setGoalAnimation(payload.goalAnimation);
+                          
+                          if (targetRole === 'admin') {
+                              hasInitialStateLoaded.current = true;
+                              showToast("تم استرجاع بيانات البث السابقة بنجاح!");
+                          }
+                      }
+                  } catch (e) { console.error("Error parsing MQTT message", e); }
+              });
+
+              setMqttClient(client);
+          };
+
+          useEffect(() => {
+              if (role === 'admin' && mqttClient && hasInitialStateLoaded.current) {
+                  const payload = { data, matchSeconds, isTimerRunning, goalAnimation };
+                  mqttClient.publish(`dory_sports_league_${roomId}`, JSON.stringify(payload), { retain: true });
+              }
+          }, [data, matchSeconds, isTimerRunning, goalAnimation, role, mqttClient, roomId]);
+
+          useEffect(() => {
+            let interval;
+            if (isTimerRunning && role === 'admin') {
+              interval = setInterval(() => {
+                setMatchSeconds(prev => prev + 1);
+              }, 1000);
+            }
+            return () => clearInterval(interval);
+          }, [isTimerRunning, role]);
+
+          const formatTime = (totalSeconds) => {
+            const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const s = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+          };
+
+          const getTeamPlayers = (teamName) => {
+              const team = data.standings.find(t => t.team === teamName);
+              return team ? team.players : [];
+          };
+
+          const confirmGoal = (type) => {
+              const teamName = data.currentMatch[`${type}Team`];
+              const teamLogo = data.currentMatch[`${type}Logo`];
+              const playerName = goalScorer;
+              const assisterName = goalAssister;
+
+              setData(prev => ({
+                  ...prev,
+                  currentMatch: { ...prev.currentMatch, [`${type}Score`]: Number(prev.currentMatch[`${type}Score`]) + 1 }
+              }));
+
+              if (playerName !== 'none') {
+                  setData(prev => {
+                      const newScorers = [...prev.topScorers];
+                      const playerIdx = newScorers.findIndex(p => p.name === playerName && p.team === teamName);
+                      if (playerIdx >= 0) {
+                          newScorers[playerIdx] = { ...newScorers[playerIdx], goals: Number(newScorers[playerIdx].goals) + 1 };
+                      } else {
+                          newScorers.push({ name: playerName, team: teamName, goals: 1 });
+                      }
+                      newScorers.sort((a, b) => (b.goals || 0) - (a.goals || 0));
+                      return { ...prev, topScorers: newScorers };
+                  });
+              }
+
+              if (assisterName !== 'none') {
+                  setData(prev => {
+                      const newAssists = [...prev.topAssists];
+                      const playerIdx = newAssists.findIndex(p => p.name === assisterName && p.team === teamName);
+                      if (playerIdx >= 0) {
+                          newAssists[playerIdx] = { ...newAssists[playerIdx], assists: Number(newAssists[playerIdx].assists) + 1 };
+                      } else {
+                          newAssists.push({ name: assisterName, team: teamName, assists: 1 });
+                      }
+                      newAssists.sort((a, b) => (b.assists || 0) - (a.assists || 0));
+                      return { ...prev, topAssists: newAssists };
+                  });
+              }
+
+              setGoalAnimation({ 
+                  teamName, 
+                  teamLogo, 
+                  playerName: playerName === 'none' ? '' : playerName,
+                  assisterName: assisterName === 'none' ? '' : assisterName
+              });
+              setIsSettingsOpen(false); 
+              setActiveGoalTeam(null);
+              setGoalScorer('none');
+              setGoalAssister('none');
+
+              setTimeout(() => setGoalAnimation(null), 6000);
+          };
+
+          const getTeamLogo = (teamName) => {
+              const team = data.standings.find(t => t.team === teamName);
+              return team ? team.logo : '⚽';
+          };
+
+          const handleGenerateSchedule = () => {
+              const teams = data.standings.filter(t => t.team.trim() !== '');
+              if (teams.length < 2) {
+                  showToast("يجب أن يكون هناك فريقين على الأقل لإنشاء الجدول");
+                  return;
+              }
+
+              let generatedSchedule = [];
+              let teamNames = teams.map(t => t.team);
+              if (teamNames.length % 2 !== 0) teamNames.push("BYE");
               
-              <div class="pt-4 border-t mt-4 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
-                 <h3 class="font-bold text-indigo-800 mb-3 text-sm">إعدادات اللعبة والساحة</h3>
-                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                     <div><label class="block text-[10px] font-bold text-gray-600 mb-1 text-center">الصفوف (5-50)</label><input type="number" id="grid-rows-input" min="5" max="50" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-indigo-500"></div>
-                     <div><label class="block text-[10px] font-bold text-gray-600 mb-1 text-center">الأعمدة (5-60)</label><input type="number" id="grid-cols-input" min="5" max="60" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-indigo-500"></div>
-                     <div><label class="block text-[10px] font-bold text-amber-600 mb-1 text-center">أموال/دائرة 💰</label><input type="number" id="coins-per-circle-input" min="1" max="1000" class="w-full px-2 py-2 border border-amber-200 bg-amber-50 rounded-lg text-center font-bold text-amber-700 outline-none focus:ring-2 focus:ring-amber-500"></div>
-                     <div><label class="block text-[10px] font-bold text-blue-600 mb-1 text-center">رصيد الدوائر ⭕</label><input type="number" id="default-quota-input" min="1" max="1000" class="w-full px-2 py-2 border border-blue-200 bg-blue-50 rounded-lg text-center font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500"></div>
-                 </div>
-              </div>
+              const numDays = teamNames.length - 1;
+              const halfSize = teamNames.length / 2;
 
-              <div class="pt-4 border-t mt-4 bg-purple-50/50 p-4 rounded-xl border border-purple-100">
-                 <h3 class="font-bold text-purple-800 mb-3 text-sm">أسعار المتجر</h3>
-                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                     <div><label class="block text-[10px] font-bold text-purple-600 mb-1 text-center">سعر مدفع التدمير 💣</label><input type="number" id="cannon-price-input" min="1" max="10000" class="w-full px-2 py-2 border border-purple-200 bg-white rounded-lg text-center font-bold text-purple-700 outline-none focus:ring-2 focus:ring-purple-500"></div>
-                     <div><label class="block text-[10px] font-bold text-blue-600 mb-1 text-center">سعر التنقل السريع 🚀</label><input type="number" id="teleport-price-input" min="1" max="10000" class="w-full px-2 py-2 border border-blue-200 bg-white rounded-lg text-center font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500"></div>
-                     <div><label class="block text-[10px] font-bold text-gray-600 mb-1 text-center">سعر الفخ 🕸️</label><input type="number" id="trap-price-input" min="1" max="10000" class="w-full px-2 py-2 border border-gray-200 bg-white rounded-lg text-center font-bold text-gray-700 outline-none focus:ring-2 focus:ring-gray-500"></div>
-                 </div>
-              </div>
+              for (let r = 0; r < data.rounds; r++) {
+                  let currentTeamNames = [...teamNames];
+                  for (let day = 0; day < numDays; day++) {
+                      for (let i = 0; i < halfSize; i++) {
+                          let home = currentTeamNames[i];
+                          let away = currentTeamNames[currentTeamNames.length - 1 - i];
+                          if (r % 2 === 1) { let temp = home; home = away; away = temp; }
+                          if (home !== "BYE" && away !== "BYE") {
+                              generatedSchedule.push({ homeTeam: home, awayTeam: away, roundName: `الجولة ${day + 1 + (r * numDays)}` });
+                          }
+                      }
+                      currentTeamNames.splice(1, 0, currentTeamNames.pop());
+                  }
+              }
 
-              <div class="pt-2 border-t mt-2">
-                 <label class="block text-sm font-bold text-gray-700 mb-2">عدد الفرق (2 - 30)</label>
-                 <input type="number" id="team-count-input" min="2" max="30" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-center font-bold text-lg outline-none focus:ring-2 focus:ring-indigo-500">
-              </div>
+              setData(prev => ({
+                  ...prev, schedule: generatedSchedule, currentScheduleIndex: 0,
+                  nextMatch: generatedSchedule.length > 0 ? { homeTeam: generatedSchedule[0].homeTeam, awayTeam: generatedSchedule[0].awayTeam, time: "قريباً", date: generatedSchedule[0].roundName } : prev.nextMatch
+              }));
+              showToast(`تم إنشاء جدول بـ ${generatedSchedule.length} مباراة بنجاح!`);
+          };
 
-              <div class="pt-4">
-                <h3 class="font-semibold text-gray-900 mb-3">أسماء وألوان الفرق</h3>
-                <div id="team-settings" class="space-y-2"></div>
-              </div>
+          const loadNextScheduledMatch = () => {
+              if (!data.schedule || data.currentScheduleIndex >= data.schedule.length) return showToast("لقد انتهت جميع المباريات في الجدول!");
+              const nextScheduled = data.schedule[data.currentScheduleIndex];
+              const followingMatch = data.schedule[data.currentScheduleIndex + 1];
 
-              <div class="pt-6 border-t mt-6 border-red-100">
-                 <button id="clear-btn" type="button" class="w-full bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 px-4 py-3 rounded-lg font-bold text-sm transition-all flex justify-center items-center gap-2">
-                    <span>🗑️</span> مسح اللوحة وتصفير الأموال والدوائر
-                 </button>
-              </div>
-          </div>
-      </div>
-      <div class="p-4 border-t bg-gray-50 rounded-b-2xl flex gap-3">
-           <button id="save-settings" class="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-md hover:shadow-lg transition-all">حفظ وتطبيق</button>
-      </div>
-    </div>
-   </div>
+              setData(prev => ({
+                  ...prev,
+                  currentMatch: { homeTeam: nextScheduled.homeTeam, homeLogo: getTeamLogo(nextScheduled.homeTeam), awayTeam: nextScheduled.awayTeam, awayLogo: getTeamLogo(nextScheduled.awayTeam), homeScore: 0, awayScore: 0, period: "لم تبدأ", isLive: false },
+                  nextMatch: followingMatch ? { homeTeam: followingMatch.homeTeam, awayTeam: followingMatch.awayTeam, time: "قريباً", date: followingMatch.roundName } : { homeTeam: "نهاية", awayTeam: "الدوري", time: "-", date: "-" },
+                  currentScheduleIndex: prev.currentScheduleIndex + 1
+              }));
+              setMatchSeconds(0);
+              setIsTimerRunning(false);
+              showToast("تم تجهيز المباراة الجديدة للبدء!");
+          };
 
-   <!-- المحتوى الرئيسي -->
-   <div class="max-w-[1800px] mx-auto p-2 lg:p-4 space-y-4">
-     
-     <!-- الهيدر (يمكن الضغط عليه 3 مرات سراً لتفعيل الإدارة) -->
-     <header class="text-center py-2 cursor-pointer select-none" id="secret-admin-trigger" title="اضغط 3 مرات للدخول للإدارة">
-        <h1 id="main-title" class="text-3xl md:text-4xl font-extrabold text-gray-900 tracking-tight mb-2">لوحة رصيدي</h1>
-        <p id="subtitle" class="text-gray-500 text-sm md:text-base"></p>
-     </header>
+          const handleCurrentMatchUpdate = (field, value) => {
+            setData(prev => ({ ...prev, currentMatch: { ...prev.currentMatch, [field]: value } }));
+          };
 
-     <!-- أدوات التحكم والفرق -->
-     <div class="card p-4 flex flex-col items-center w-full shadow-lg border-indigo-50">
-        
-        <div id="admin-tools" class="bg-gray-100 p-1 rounded-xl inline-flex mb-4 w-full max-w-sm admin-only hidden">
-            <button id="color-mode" class="flex-1 py-2 px-4 rounded-lg text-sm font-bold shadow-sm bg-white text-indigo-600 transition-all">🎨 وضع التلوين</button>
-            <button id="delete-mode" class="flex-1 py-2 px-4 rounded-lg text-sm font-bold text-gray-500 hover:text-gray-700 transition-all">🗑️ وضع الحذف</button>
-        </div>
+          const handleTeamSelect = (type, teamName) => {
+            const selectedTeam = data.standings.find(t => t.team === teamName);
+            if (selectedTeam) setData(prev => ({ ...prev, currentMatch: { ...prev.currentMatch, [`${type}Team`]: selectedTeam.team, [`${type}Logo`]: selectedTeam.logo } }));
+          };
 
-        <div class="w-full">
-            <div id="team-selection-container" class="flex flex-wrap justify-center gap-2"></div>
-        </div>
-
-        <div id="delete-instructions" class="hidden mt-4 bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold animate-pulse">
-            حالة الحذف مفعلة: اضغط على أي دائرة لمسحها لاستعادة الرصيد
-        </div>
-     </div>
-
-     <div class="flex flex-col lg:flex-row gap-3 items-start">
-        
-        <!-- العمود الجانبي -->
-        <div class="w-full lg:w-60 flex-shrink-0 order-1 lg:order-1">
-            <div class="sticky top-4 space-y-4">
-                
-                <div class="card">
-                    <div class="bg-gray-50/50 p-3 border-b border-gray-100 flex justify-between items-center">
-                        <h3 class="font-bold text-gray-800 text-base flex items-center gap-2"><span>🏆</span> الصدارة</h3>
-                    </div>
-                    <div id="leaderboard-list" class="divide-y divide-gray-50"></div>
-                    <div id="leaderboard-expand-btn" class="expand-btn hidden">عرض الـ 10 الأوائل ↓</div>
-                </div>
-
-                <div class="card bg-white border-2 border-amber-100 shadow-lg" id="store-card">
-                    <div class="bg-amber-50 p-3 border-b border-amber-100 flex justify-between items-center">
-                        <h3 class="font-bold text-amber-800 text-base flex items-center gap-2"><span>🛒</span> متجر المكافآت</h3>
-                        <span class="text-xs font-bold bg-amber-200 text-amber-800 px-2 py-1 rounded-full" id="store-team-coins">0 💰</span>
-                    </div>
-                    <div class="p-3 space-y-3">
-                        <button id="btn-buy-cannon" disabled class="w-full relative overflow-hidden bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-xl p-3 shadow-sm transform transition active:scale-95 disabled:opacity-50 group border-none">
-                            <div class="flex justify-between items-center relative z-10"><span class="font-bold text-sm text-white">💣 مدفع التدمير</span><span id="cannon-price-display" class="bg-white/20 px-2 py-1 rounded-lg text-xs font-black text-white">50 💰</span></div>
-                            <p class="text-[10px] text-white/90 text-right mt-1 relative z-10 font-medium">يدمر 5 دوائر للخصم على شكل (+)</p>
-                        </button>
-                        <button id="btn-buy-teleport" disabled class="w-full relative overflow-hidden bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl p-3 shadow-sm transform transition active:scale-95 disabled:opacity-50 group border-none">
-                            <div class="flex justify-between items-center relative z-10"><span class="font-bold text-sm text-white">🚀 التنقل السريع</span><span id="teleport-price-display" class="bg-white/20 px-2 py-1 rounded-lg text-xs font-black text-white">30 💰</span></div>
-                            <p class="text-[10px] text-white/90 text-right mt-1 relative z-10 font-medium">وضع دائرة إضافية في أي مكان فارغ</p>
-                        </button>
-                        <button id="btn-buy-trap" disabled class="w-full relative overflow-hidden bg-gradient-to-r from-gray-700 to-gray-900 text-white rounded-xl p-3 shadow-sm transform transition active:scale-95 disabled:opacity-50 group border-none">
-                            <div class="flex justify-between items-center relative z-10"><span class="font-bold text-sm text-white">🕸️ فخ الدوائر</span><span id="trap-price-display" class="bg-white/20 px-2 py-1 rounded-lg text-xs font-black text-white">40 💰</span></div>
-                            <p class="text-[10px] text-white/90 text-right mt-1 relative z-10 font-medium">يحمي دائرتك ويفقد الخصم دائرته</p>
-                        </button>
-                        <div id="weapon-status" class="hidden mt-2 text-xs font-bold p-2 rounded-lg text-center animate-pulse border"></div>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-
-        <div class="flex-1 w-full space-y-4 order-2 lg:order-2 overflow-hidden">
-            <div class="grid-wrapper">
-                <div id="circles-grid"></div>
-            </div>
-        </div>
-
-     </div>
-
-   </div>
-
-  <script>
-        // === متغيرات حالة اللعبة ===
-        const allColors = [
-            '#166534', '#ea580c', '#db2777', '#0284c7', '#1f2937', '#ca8a04', '#4b5563', '#1e40af', '#dc2626',
-            '#7c3aed', '#059669', '#be123c', '#0f766e', '#b45309', '#4338ca', '#a21caf', '#374151', '#15803d',
-            '#b91c1c', '#0369a1', '#6d28d9', '#047857', '#9f1239', '#0e7490', '#c2410c', '#3730a3', '#86198f'
-        ];
-
-        let isAdmin = false; 
-
-        let teamColors = [...allColors];
-        let defaultTeamNames = Array.from({length: 30}, (_, i) => `فريق ${i + 1}`);
-
-        let teamCount = 9;
-        let gridRows = 24; 
-        let gridCols = 43; 
-        let coinsPerCircle = 5; 
-        let defaultQuota = 30; 
-        let cannonPrice = 50;
-        let teleportPrice = 30; 
-        let trapPrice = 40; 
-        
-        let selectedTeam = 0;
-        let circleData = new Map();
-        let trapData = new Map(); 
-        let manualCoins = new Array(30).fill(0); 
-        let manualQuota = new Array(30).fill(0); 
-        let teamCoinsGlobal = new Array(30).fill(0); 
-        
-        let isDeleteMode = false;
-        let activeWeapon = null; 
-        let isLeaderboardExpanded = false;
-
-        // ==========================================
-        //  إعداد السيرفر المجاني السريع (MQTT)
-        // ==========================================
-        let mqttClient = null;
-        // قم بتغيير هذا الرقم ليكون مميزاً وخاصاً بك فقط لكي لا يتداخل مع لوحات أخرى
-        const GAME_SECRET_TOPIC = "abdullah_residi_board_v1_super_secret_998877"; 
-
-        function initCloud() {
-            const statusEl = document.getElementById('cloud-status');
-            statusEl.textContent = "جاري الاتصال بالسيرفر...";
-            
-            // الاتصال بالسيرفر المجاني (مفتوح ولا يحتاج حسابات ويعمل على كل الشبكات)
-            mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
-
-            mqttClient.on('connect', () => {
-                statusEl.textContent = "🟢 متصل ومباشر";
-                statusEl.className = "fixed top-4 right-4 z-50 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-green-200 flex items-center gap-2";
-                
-                // الاشتراك في قناة اللعبة الخاصة بك
-                mqttClient.subscribe(GAME_SECRET_TOPIC);
+          const handleStandingsUpdate = (index, field, value) => {
+            setData(prev => {
+              const newStandings = [...prev.standings];
+              newStandings[index] = { ...newStandings[index], [field]: field === 'points' ? Number(value) : value };
+              newStandings.sort((a, b) => b.points - a.points);
+              newStandings.forEach((team, i) => team.rank = i + 1);
+              return { ...prev, standings: newStandings };
             });
+          };
 
-            // استقبال التحديثات من السيرفر
-            mqttClient.on('message', (topic, message) => {
-                if (topic === GAME_SECRET_TOPIC) {
-                    try {
-                        const data = JSON.parse(message.toString());
-                        // المشاهدون يتحدثون فوراً (الأدمن لا يتحدث من الشبكة لكي لا يتقطع عمله)
-                        if (!isAdmin) {
-                            applyCloudData(data);
-                        }
-                    } catch (e) { console.error("Error formatting data:", e); }
-                }
+          const addTeam = () => {
+            setData(prev => ({ ...prev, standings: [ ...prev.standings, { rank: prev.standings.length + 1, team: "فريق جديد", logo: "⚽", played: 0, win: 0, draw: 0, lose: 0, points: 0, form: 'same', players: [] } ] }));
+          };
+
+          const removeTeam = (index) => {
+            setData(prev => {
+              const newStandings = prev.standings.filter((_, i) => i !== index);
+              newStandings.forEach((team, i) => team.rank = i + 1);
+              return { ...prev, standings: newStandings };
             });
+          };
 
-            mqttClient.on('error', (err) => {
-                statusEl.textContent = "🔴 خطأ في الاتصال";
-                statusEl.className = "fixed top-4 right-4 z-50 bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-red-200 flex items-center gap-2";
+          const removeRecentMatch = (index) => {
+            setData(prev => ({ ...prev, recentMatches: prev.recentMatches.filter((_, i) => i !== index) }));
+          };
+
+          const finishMatch = () => {
+            setIsTimerRunning(false); 
+            const { homeTeam, awayTeam, homeScore, awayScore } = data.currentMatch;
+            const hScore = Number(homeScore);
+            const aScore = Number(awayScore);
+
+            setData(prev => {
+              const newStandings = [...prev.standings];
+              const updateTeam = (teamName, isWin, isDraw, isLose, ptsAdded) => {
+                const idx = newStandings.findIndex(t => t.team === teamName);
+                if (idx !== -1) {
+                  newStandings[idx] = { ...newStandings[idx], played: newStandings[idx].played + 1, win: newStandings[idx].win + (isWin ? 1 : 0), draw: newStandings[idx].draw + (isDraw ? 1 : 0), lose: newStandings[idx].lose + (isLose ? 1 : 0), points: newStandings[idx].points + ptsAdded };
+                }
+              };
+
+              if (hScore > aScore) { updateTeam(homeTeam, true, false, false, 3); updateTeam(awayTeam, false, false, true, 0); }
+              else if (aScore > hScore) { updateTeam(homeTeam, false, false, true, 0); updateTeam(awayTeam, true, false, false, 3); }
+              else { updateTeam(homeTeam, false, true, false, 1); updateTeam(awayTeam, false, true, false, 1); }
+
+              newStandings.sort((a, b) => b.points - a.points);
+              newStandings.forEach((team, i) => team.rank = i + 1);
+
+              const newMatchResult = { homeTeam, awayTeam, homeScore: hScore, awayScore: aScore, date: "الآن" };
+
+              return { ...prev, standings: newStandings, recentMatches: [newMatchResult, ...prev.recentMatches].slice(0, 10), currentMatch: { ...prev.currentMatch, isLive: false, period: "انتهت المباراة" } };
             });
-        }
+            showToast("تم حفظ النتيجة وتحديث الجدول!");
+          };
 
-        // إرسال البيانات للسيرفر
-        function saveToCloud() {
-            if (!isAdmin || !mqttClient) return; // الأدمن فقط من يرسل البيانات
-            
-            const dataToSave = {
-                circles: JSON.stringify(Array.from(circleData.entries())),
-                traps: JSON.stringify(Array.from(trapData.entries())),
-                teamColors, defaultTeamNames, teamCount, gridRows, gridCols,
-                manualCoins, manualQuota, coinsPerCircle, defaultQuota,
-                cannonPrice, teleportPrice, trapPrice,
-                selectedTeam,
-                title: document.getElementById('main-title').textContent,
-                subtitle: document.getElementById('subtitle').textContent,
-                timestamp: Date.now()
-            };
-
-            // خاصية retain: true هي السحر! تخبر السيرفر بحفظ آخر رسالة، لكي يراها أي لاعب جديد يدخل لاحقاً
-            mqttClient.publish(GAME_SECRET_TOPIC, JSON.stringify(dataToSave), { retain: true });
-        }
-
-        function applyCloudData(data) {
-            teamColors = data.teamColors || teamColors;
-            defaultTeamNames = data.defaultTeamNames || defaultTeamNames;
-            teamCount = data.teamCount || teamCount;
-            gridRows = data.gridRows || gridRows;
-            gridCols = data.gridCols || gridCols;
-            manualCoins = data.manualCoins || manualCoins;
-            manualQuota = data.manualQuota || manualQuota;
-            coinsPerCircle = data.coinsPerCircle || coinsPerCircle;
-            defaultQuota = data.defaultQuota || defaultQuota;
-            cannonPrice = data.cannonPrice || cannonPrice;
-            teleportPrice = data.teleportPrice || teleportPrice;
-            trapPrice = data.trapPrice || trapPrice;
-            selectedTeam = data.selectedTeam !== undefined ? data.selectedTeam : selectedTeam;
-
-            document.getElementById('main-title').textContent = data.title || "لوحة رصيدي";
-            document.getElementById('subtitle').textContent = data.subtitle || "";
-
-            try {
-                circleData = new Map(JSON.parse(data.circles));
-                trapData = new Map(JSON.parse(data.traps));
-            } catch(e) { circleData = new Map(); trapData = new Map(); }
-
-            createGrid();
-            initUI();
-            
-            circleData.forEach((val, key) => {
-                const el = document.querySelector(`.circle[data-key="${key}"]`);
-                if(el) updateCircleVisual(el, val.team);
+          const handleStatUpdate = (listType, index, field, value) => {
+            setData(prev => {
+              const newList = [...prev[listType]];
+              newList[index] = { ...newList[index], [field]: (field === 'goals' || field === 'assists') ? Number(value) : value };
+              newList.sort((a, b) => (b.goals ?? b.assists ?? 0) - (a.goals ?? a.assists ?? 0));
+              return { ...prev, [listType]: newList };
             });
+          };
 
-            updateStatsAndLeaderboard();
-        }
+          const addStatPlayer = (listType) => {
+            setData(prev => {
+              const newItem = listType === 'topScorers' ? { name: "لاعب جديد", team: "اختر الفريق", goals: 0 } : { name: "لاعب جديد", team: "اختر الفريق", assists: 0 };
+              return { ...prev, [listType]: [...prev[listType], newItem] };
+            });
+          };
 
-        // === منطق الدخول للإدارة (الباب السري) ===
-        let titleClickCount = 0;
-        let titleClickTimer = null;
-        
-        document.getElementById('secret-admin-trigger').addEventListener('click', () => {
-            if (isAdmin) return;
-            titleClickCount++;
-            clearTimeout(titleClickTimer);
-            titleClickTimer = setTimeout(() => { titleClickCount = 0; }, 1000); 
+          const removeStatPlayer = (listType, index) => {
+            setData(prev => ({ ...prev, [listType]: prev[listType].filter((_, i) => i !== index) }));
+          };
 
-            if (titleClickCount >= 3) {
-                titleClickCount = 0;
-                const password = prompt("🔐 أدخل كلمة مرور الإدارة لتفعيل أدوات التحكم:");
-                if (password === "1234") { 
-                    activateAdminMode();
-                } else if (password !== null) {
-                    alert("❌ كلمة المرور غير صحيحة");
-                }
-            }
-        });
+          useEffect(() => {
+            if (!data.standings.find(t => t.team === selectedSquadTeam) && data.standings.length > 0) setSelectedSquadTeam(data.standings[0].team);
+          }, [data.standings, selectedSquadTeam]);
 
-        function activateAdminMode() {
-            isAdmin = true;
-            document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
-            document.querySelectorAll('.circle').forEach(c => c.style.cursor = 'pointer');
-            initUI(); 
-            saveToCloud(); 
-            alert("✅ تم تفعيل وضع الإدارة بنجاح! جميع تغييراتك ستظهر للجميع لحظياً.");
-        }
+          const handleAddPlayerToSquad = (e) => {
+            e.preventDefault();
+            if (!newPlayerName.trim() || !selectedSquadTeam) return;
+            setData(prev => {
+              const newStandings = [...prev.standings];
+              const teamIndex = newStandings.findIndex(t => t.team === selectedSquadTeam);
+              if (teamIndex !== -1) { newStandings[teamIndex] = { ...newStandings[teamIndex], players: [...(newStandings[teamIndex].players || []), newPlayerName.trim()] }; }
+              return { ...prev, standings: newStandings };
+            });
+            setNewPlayerName('');
+          };
 
-        // === أصوات اللعبة ===
-        function playSound(type) {
-            try {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                if (!AudioContext) return;
-                const ctx = new AudioContext();
-                
-                if (type === 'error') {
-                    const osc1 = ctx.createOscillator(); const gainNode = ctx.createGain();
-                    osc1.type = 'square'; osc1.frequency.setValueAtTime(160, ctx.currentTime);
-                    gainNode.gain.setValueAtTime(0, ctx.currentTime);
-                    gainNode.gain.linearRampToValueAtTime(0.8, ctx.currentTime + 0.05); 
-                    gainNode.gain.setValueAtTime(0.8, ctx.currentTime + 0.6); 
-                    gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
-                    osc1.connect(gainNode); gainNode.connect(ctx.destination);
-                    osc1.start(); osc1.stop(ctx.currentTime + 0.8);
-                } else if (type === 'explosion') {
-                    const osc = ctx.createOscillator(); const gainNode = ctx.createGain();
-                    osc.type = 'square'; osc.frequency.setValueAtTime(100, ctx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(10, ctx.currentTime + 0.3);
-                    gainNode.gain.setValueAtTime(1, ctx.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-                    osc.connect(gainNode); gainNode.connect(ctx.destination);
-                    osc.start(); osc.stop(ctx.currentTime + 0.3);
-                } else if (type === 'teleport') {
-                    const osc = ctx.createOscillator(); const gainNode = ctx.createGain();
-                    osc.type = 'sine'; osc.frequency.setValueAtTime(300, ctx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.2); 
-                    gainNode.gain.setValueAtTime(0, ctx.currentTime);
-                    gainNode.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-                    osc.connect(gainNode); gainNode.connect(ctx.destination);
-                    osc.start(); osc.stop(ctx.currentTime + 0.3);
-                } else if (type === 'trap') {
-                    const osc = ctx.createOscillator(); const gainOsc = ctx.createGain();
-                    osc.type = 'triangle'; osc.frequency.setValueAtTime(400, ctx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.15);
-                    gainOsc.gain.setValueAtTime(1, ctx.currentTime);
-                    gainOsc.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
-                    osc.connect(gainOsc); gainOsc.connect(ctx.destination);
-                    osc.start(); osc.stop(ctx.currentTime + 0.15);
-                }
-            } catch (e) { }
-        }
+          const handleRemovePlayerFromSquad = (teamName, playerIndex) => {
+            setData(prev => {
+              const newStandings = [...prev.standings];
+              const teamIndex = newStandings.findIndex(t => t.team === teamName);
+              if (teamIndex !== -1) {
+                const newPlayers = [...(newStandings[teamIndex].players || [])];
+                newPlayers.splice(playerIndex, 1);
+                newStandings[teamIndex] = { ...newStandings[teamIndex], players: newPlayers };
+              }
+              return { ...prev, standings: newStandings };
+            });
+          };
 
-        // === منطق الواجهة واللعب ===
-        function initUI() {
-            const selectContainer = document.getElementById('team-selection-container');
-            selectContainer.innerHTML = '';
-            
-            for(let i = 0; i < teamCount; i++) {
-                const btn = document.createElement('button');
-                btn.className = `team-btn ${i === selectedTeam ? 'active' : ''} ${!isAdmin ? 'pointer-events-none' : ''}`;
-                btn.style.setProperty('--team-color', teamColors[i]);
-                
-                let controlsHTML = '';
-                if (isAdmin) {
-                    controlsHTML = `
-                        <div id="quota-container-${i}" class="flex items-center justify-between bg-blue-50 text-blue-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-blue-100 mt-1">
-                            <div class="quota-minus text-red-500 hover:bg-red-100 rounded-sm px-1.5 font-black pointer-events-auto" title="تقليل الدوائر">-</div>
-                            <div title="رصيد الدوائر المتبقي" class="flex items-center font-bold"><span>⭕</span> <span id="btn-quota-${i}" class="mr-1">0</span></div>
-                            <div class="quota-plus text-green-500 hover:bg-green-100 rounded-sm px-1.5 font-black pointer-events-auto" title="زيادة الدوائر">+</div>
-                        </div>
-                        <div class="flex items-center justify-between bg-amber-50 text-amber-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-amber-100 mt-1">
-                            <div class="btn-minus text-red-500 hover:bg-red-100 rounded-sm px-1.5 font-black pointer-events-auto" title="خصم أموال">-</div>
-                            <div title="إجمالي الأموال" class="flex items-center font-bold"><span>💰</span> <span id="btn-coins-${i}" class="mr-1">0</span></div>
-                            <div class="btn-plus text-green-500 hover:bg-green-100 rounded-sm px-1.5 font-black pointer-events-auto" title="إضافة أموال">+</div>
-                        </div>
-                    `;
-                } else {
-                    controlsHTML = `
-                        <div id="quota-container-${i}" class="flex items-center justify-center bg-blue-50 text-blue-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-blue-100 mt-1">
-                            <div title="رصيد الدوائر المتبقي" class="flex items-center font-bold"><span>⭕</span> <span id="btn-quota-${i}" class="mr-1">0</span></div>
-                        </div>
-                        <div class="flex items-center justify-center bg-amber-50 text-amber-600 rounded px-1 py-0.5 w-full text-[11px] shadow-inner border border-amber-100 mt-1">
-                            <div title="إجمالي الأموال" class="flex items-center font-bold"><span>💰</span> <span id="btn-coins-${i}" class="mr-1">0</span></div>
-                        </div>
-                    `;
-                }
-
-                btn.innerHTML = `
-                    <div class="team-btn-indicator"></div>
-                    <span class="team-btn-label mb-1">${defaultTeamNames[i]}</span>
-                    <div class="flex flex-col w-full px-1 text-[10px] font-bold text-gray-500 border-t border-gray-100 pt-1">
-                        <div class="flex justify-between w-full">
-                            <div title="الدوائر الملونة" class="flex items-center"><span>●</span> <span id="btn-count-${i}" class="mr-0.5">0</span></div>
-                            <div title="الانتصارات" class="flex items-center text-indigo-600"><span>🏆</span> <span id="btn-wins-${i}" class="mr-0.5">0</span></div>
-                        </div>
-                        ${controlsHTML}
-                    </div>
-                `;
-                
-                if (isAdmin) {
-                    const minusBtn = btn.querySelector('.btn-minus');
-                    const plusBtn = btn.querySelector('.btn-plus');
-                    const qMinusBtn = btn.querySelector('.quota-minus');
-                    const qPlusBtn = btn.querySelector('.quota-plus');
-                    
-                    if (minusBtn) minusBtn.onclick = (e) => { e.stopPropagation(); manualCoins[i] -= coinsPerCircle; processUpdates(); };
-                    if (plusBtn) plusBtn.onclick = (e) => { e.stopPropagation(); manualCoins[i] += coinsPerCircle; processUpdates(); };
-                    if (qMinusBtn) qMinusBtn.onclick = (e) => { e.stopPropagation(); manualQuota[i] -= 1; processUpdates(); };
-                    if (qPlusBtn) qPlusBtn.onclick = (e) => { e.stopPropagation(); manualQuota[i] += 1; processUpdates(); };
-                    
-                    btn.onclick = () => {
-                        if (activeWeapon) {
-                            activeWeapon = null;
-                            document.getElementById('weapon-status').classList.add('hidden');
-                            document.getElementById('color-mode').click();
-                        }
-                        if (isDeleteMode) return;
-                        document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
-                        btn.classList.add('active');
-                        selectedTeam = i;
-                        updateStoreUI(); 
-                        processUpdates();
-                    };
-                }
-                selectContainer.appendChild(btn);
-            }
-        }
-
-        function createGrid() {
-            const grid = document.getElementById('circles-grid');
-            grid.innerHTML = '';
-            const estimatedSize = Math.max(1.0, 65 / gridCols); 
-            document.documentElement.style.setProperty('--circle-size', `${estimatedSize}vw`);
-
-            for (let row = 0; row < gridRows; row++) {
-                const rowDiv = document.createElement('div');
-                rowDiv.className = 'grid-row';
-                for (let col = 0; col < gridCols; col++) {
-                    const circle = document.createElement('div');
-                    circle.className = 'circle';
-                    circle.dataset.key = `${row}-${col}`;
-                    if (!isAdmin) circle.style.cursor = 'default';
-                    circle.onclick = (e) => {
-                        if (isAdmin) handleCircleClick(e, row, col);
-                    };
-                    rowDiv.appendChild(circle);
-                }
-                grid.appendChild(rowDiv);
-            }
-        }
-
-        async function handleCircleClick(e, row, col) {
-            const circle = e.target;
-            const key = `${row}-${col}`;
-
-            if (activeWeapon === 'cannon') {
-                manualCoins[selectedTeam] -= cannonPrice;
-                const targets = [[row, col], [row-1, col], [row+1, col], [row, col-1], [row, col+1]];
-                targets.forEach(([r, c]) => {
-                    if (r < 0 || r >= gridRows || c < 0 || c >= gridCols) return;
-                    const k = `${r}-${c}`;
-                    const el = document.querySelector(`.circle[data-key="${k}"]`);
-                    if (circleData.has(k) && circleData.get(k).team !== selectedTeam) {
-                        circleData.delete(k); trapData.delete(k); 
-                    }
-                    if(el) {
-                        el.style.backgroundColor = '#ef4444'; el.style.borderColor = '#ef4444'; el.style.transform = 'scale(1.5)'; el.style.zIndex = '10';
-                        setTimeout(() => {
-                            el.style.transform = ''; el.style.zIndex = '';
-                            updateCircleVisual(el, circleData.has(k) ? circleData.get(k).team : null);
-                        }, 300);
-                    }
-                });
-                playSound('explosion');
-                activeWeapon = null;
-                document.getElementById('weapon-status').classList.add('hidden');
-                processUpdates();
-                return;
-            }
-            else if (activeWeapon === 'teleport') {
-                if (circleData.has(key)) { playSound('error'); return; }
-                manualCoins[selectedTeam] -= teleportPrice;
-                manualQuota[selectedTeam] += 1; 
-                playSound('teleport');
-                circle.style.transform = 'scale(1.5)'; circle.style.zIndex = '10';
-                setTimeout(() => { circle.style.transform = ''; circle.style.zIndex = ''; }, 300);
-                activeWeapon = null;
-                document.getElementById('weapon-status').classList.add('hidden');
-                circleData.set(key, { team: selectedTeam, value: 0 });
-                updateCircleVisual(circle, selectedTeam);
-                processUpdates();
-                return;
-            }
-            else if (activeWeapon === 'trap') {
-                if (!circleData.has(key) || circleData.get(key).team !== selectedTeam || trapData.has(key)) { playSound('error'); return; }
-                manualCoins[selectedTeam] -= trapPrice;
-                trapData.set(key, selectedTeam);
-                playSound('teleport'); 
-                circle.innerHTML = '🕸️'; circle.style.display = 'flex'; circle.style.alignItems = 'center'; circle.style.justifyContent = 'center';
-                circle.style.transform = 'scale(1.3) rotate(15deg)'; circle.style.boxShadow = 'inset 0 0 10px rgba(0,0,0,0.5)';
-                setTimeout(() => { circle.innerHTML = ''; circle.style.transform = ''; circle.style.boxShadow = ''; }, 800);
-                activeWeapon = null;
-                document.getElementById('weapon-status').classList.add('hidden');
-                processUpdates();
-                return;
-            }
-
-            if (!isDeleteMode) {
-                let coloredCount = 0;
-                circleData.forEach(data => { if(data.team === selectedTeam) coloredCount++; });
-                let remaining = defaultQuota + manualQuota[selectedTeam] - coloredCount;
-                const isSameTeam = circleData.has(key) && circleData.get(key).team === selectedTeam;
-
-                if (remaining <= 0 && !isSameTeam) { playSound('error'); return; }
-
-                if (!isSameTeam && trapData.has(key)) {
-                    trapData.delete(key); manualQuota[selectedTeam] -= 1; playSound('trap');
-                    circle.innerHTML = '❌'; circle.style.backgroundColor = '#ef4444'; circle.classList.add('trap-shatter');
-                    setTimeout(() => {
-                        circle.innerHTML = ''; circle.classList.remove('trap-shatter');
-                        circle.style.backgroundColor = ''; 
-                        if(circleData.has(key)) updateCircleVisual(circle, circleData.get(key).team);
-                    }, 600);
-                    processUpdates(); return; 
-                }
-            }
-
-            circle.classList.add('clicked');
-            setTimeout(() => circle.classList.remove('clicked'), 300);
-
-            if (isDeleteMode) {
-                if (circleData.has(key)) {
-                    circleData.delete(key); trapData.delete(key); 
-                    updateCircleVisual(circle, null);
-                    processUpdates();
-                }
+          const toggleFullScreen = () => {
+            if (!document.fullscreenElement) {
+                if (document.fullscreenEnabled) { document.documentElement.requestFullscreen().catch(() => showToast("عذراً، ميزة ملء الشاشة محظورة.")); }
+                else { showToast("عذراً، متصفحك لا يدعم ملء الشاشة."); }
             } else {
-                circleData.set(key, { team: selectedTeam, value: coinsPerCircle });
-                updateCircleVisual(circle, selectedTeam);
-                processUpdates();
+                if (document.exitFullscreen) document.exitFullscreen().catch(() => showToast("حدث خطأ أثناء الخروج."));
             }
-        }
+          };
 
-        function updateCircleVisual(element, teamIndex) {
-            if (teamIndex === null || teamIndex >= teamCount) {
-                element.style.backgroundColor = 'transparent';
-                element.style.borderColor = '#d1d5db';
-            } else {
-                element.style.backgroundColor = teamColors[teamIndex];
-                element.style.borderColor = teamColors[teamIndex];
-            }
-        }
+          const showToast = (msg) => {
+            setToastMessage(msg);
+            setTimeout(() => setToastMessage(''), 3500);
+          };
 
-        function processUpdates() {
-            updateStatsAndLeaderboard();
-            if (isAdmin) {
-                saveToCloud(); // رفع التغيير للسيرفر
-            }
-        }
+          // ==========================================
+          // 📺 شاشة الإعداد الأولية (الدخول)
+          // ==========================================
+          if (role === 'setup') {
+              return (
+                  <div className="h-[100dvh] w-full flex items-center justify-center bg-slate-950 text-white relative overflow-hidden" dir="rtl">
+                      {/* رسالة التنبيه */}
+                      {toastMessage && (
+                        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-[200] bg-blue-600/90 text-white px-6 py-3 rounded-2xl shadow-2xl backdrop-blur-md border border-blue-400/50 flex items-center gap-3 animate-bounce">
+                           <i className="fa-solid fa-circle-info text-lg"></i>
+                           <span className="font-semibold text-sm">{toastMessage}</span>
+                        </div>
+                      )}
+                      {/* خلفية ديناميكية */}
+                      <div className="absolute inset-0 z-0 opacity-30 pointer-events-none">
+                          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600 rounded-full mix-blend-screen filter blur-[100px] opacity-50 animate-pulse"></div>
+                          <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-purple-900 rounded-full mix-blend-screen filter blur-[120px] opacity-50"></div>
+                      </div>
 
-        function updateStoreUI() {
-            const btnCannon = document.getElementById('btn-buy-cannon');
-            const btnTeleport = document.getElementById('btn-buy-teleport');
-            const btnTrap = document.getElementById('btn-buy-trap');
-            
-            const currentCoins = teamCoinsGlobal[selectedTeam] || 0;
-            document.getElementById('store-team-coins').textContent = `${currentCoins} 💰`;
+                      <div className="bg-white/5 border border-white/10 p-6 md:p-12 rounded-[2rem] w-[95%] max-w-4xl shadow-[0_0_50px_rgba(0,0,0,0.5)] z-10 text-center backdrop-blur-xl max-h-[90dvh] overflow-y-auto custom-scrollbar">
+                          <i className="fa-solid fa-satellite-dish text-5xl md:text-6xl text-blue-500 mb-6 animate-pulse"></i>
+                          <h1 className="text-2xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-4">نظام البث الرياضي المباشر</h1>
+                          <p className="text-gray-400 mb-8 md:mb-12 text-sm md:text-lg">اختر طريقة الدخول للبدء (مزامنة فورية لجميع الأجهزة)</p>
 
-            document.getElementById('cannon-price-display').textContent = `${cannonPrice} 💰`;
-            document.getElementById('teleport-price-display').textContent = `${teleportPrice} 💰`;
-            document.getElementById('trap-price-display').textContent = `${trapPrice} 💰`;
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
+                              {/* خيار الإدارة */}
+                              <div className="bg-black/30 border border-blue-500/30 p-6 md:p-8 rounded-3xl flex flex-col items-center hover:bg-black/50 transition-all shadow-lg group">
+                                  <div className="w-16 h-16 md:w-20 md:h-20 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center text-2xl md:text-3xl mb-4 md:mb-6 group-hover:scale-110 transition-transform">
+                                      <i className="fa-solid fa-user-tie"></i>
+                                  </div>
+                                  <h2 className="text-xl md:text-2xl font-bold mb-3 text-white">إدارة البث (أدمن)</h2>
+                                  <p className="text-xs md:text-sm text-gray-400 mb-6 md:mb-8 px-2 md:px-4">ابدأ بطولة جديدة واحصل على كود خاص لتشاركه مع المشاهدين والطلاب.</p>
+                                  <button onClick={() => connectToRoom('admin', Math.floor(1000 + Math.random() * 9000).toString(), true)} className="w-full py-3 md:py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold transition-all text-sm md:text-lg flex justify-center items-center gap-3 mt-auto">
+                                      <i className="fa-solid fa-play"></i> إنشاء بث جديد
+                                  </button>
+                              </div>
 
-            if (!isAdmin) {
-                btnCannon.disabled = true;
-                btnTeleport.disabled = true;
-                btnTrap.disabled = true;
-            } else {
-                btnCannon.disabled = currentCoins < cannonPrice;
-                btnTeleport.disabled = currentCoins < teleportPrice;
-                btnTrap.disabled = currentCoins < trapPrice;
-            }
-        }
+                              {/* خيار المشاهدة */}
+                              <div className="bg-black/30 border border-purple-500/30 p-6 md:p-8 rounded-3xl flex flex-col items-center hover:bg-black/50 transition-all shadow-lg group">
+                                  <div className="w-16 h-16 md:w-20 md:h-20 bg-purple-500/20 text-purple-400 rounded-full flex items-center justify-center text-2xl md:text-3xl mb-4 md:mb-6 group-hover:scale-110 transition-transform">
+                                      <i className="fa-solid fa-tv"></i>
+                                  </div>
+                                  <h2 className="text-xl md:text-2xl font-bold mb-3 text-white">الدخول كمشاهد</h2>
+                                  <p className="text-xs md:text-sm text-gray-400 mb-6 md:mb-8 px-2 md:px-4">أدخل كود الغرفة الذي حصلت عليه من الأدمن لمشاهدة البث والنتائج الحية.</p>
+                                  <div className="w-full relative mb-4">
+                                      <i className="fa-solid fa-key absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500"></i>
+                                      <input type="number" value={inputRoomCode} onChange={e => setInputRoomCode(e.target.value)} placeholder="كود الغرفة (مثال: 4592)" className="w-full bg-black/50 border border-white/10 rounded-xl p-3 md:p-4 pr-12 text-center text-lg md:text-xl tracking-[0.5em] font-mono text-white focus:border-purple-500 focus:outline-none" />
+                                  </div>
+                                  <div className="flex w-full gap-2 mt-auto">
+                                      <button onClick={() => connectToRoom('viewer', inputRoomCode, false)} className="flex-[2] py-3 md:py-4 bg-purple-600 hover:bg-purple-500 rounded-xl font-bold transition-all flex justify-center items-center gap-2 text-sm md:text-base">
+                                          <i className="fa-solid fa-eye"></i> دخول
+                                      </button>
+                                      <button onClick={() => connectToRoom('admin', inputRoomCode, false)} className="flex-1 py-3 md:py-4 bg-gray-700 hover:bg-gray-600 rounded-xl font-bold transition-all text-[10px] md:text-xs" title="استرجاع إدارة غرفة سابقة">
+                                          استكمال كأدمن
+                                      </button>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              );
+          }
 
-        function updateStatsAndLeaderboard() {
-            const counts = new Array(teamCount).fill(0);
-            const wins = new Array(teamCount).fill(0);
-            const coins = new Array(teamCount).fill(0);
-            
-            for(let i = 0; i < teamCount; i++) coins[i] = manualCoins[i] || 0;
-            circleData.forEach(data => { 
-                if(data.team < teamCount) { counts[data.team]++; coins[data.team] += data.value; }
-            });
-            teamCoinsGlobal = [...coins];
 
-            const directions = [[0,1], [1,0], [1,1], [1,-1]];
-            for (let t = 0; t < teamCount; t++) {
-                const teamLines = [];
-                for (let [key, data] of circleData) {
-                    if (data.team !== t) continue;
-                    const [r, c] = key.split('-').map(Number);
-                    directions.forEach(([dr, dc], dIdx) => {
-                        const line = [];
-                        for(let i=0; i<4; i++) {
-                            const nr = r + dr*i, nc = c + dc*i;
-                            if (nr < 0 || nr >= gridRows || nc < 0 || nc >= gridCols) break;
-                            const k = `${nr}-${nc}`;
-                            if(circleData.has(k) && circleData.get(k).team === t) line.push(k); else break;
-                        }
-                        if(line.length === 4) teamLines.push({line, dir: dIdx});
-                    });
-                }
-                const validLines = [];
-                teamLines.forEach(curr => {
-                    let overlap = false;
-                    for (let v of validLines) {
-                        const shared = curr.line.filter(x => v.line.includes(x)).length;
-                        if (curr.dir === v.dir && shared > 0) overlap = true; else if (shared > 1) overlap = true;
-                    }
-                    if (!overlap) validLines.push(curr);
-                });
-                wins[t] = validLines.length;
-            }
-
-            for (let i = 0; i < teamCount; i++) {
-                const countEl = document.getElementById(`btn-count-${i}`);
-                const winsEl = document.getElementById(`btn-wins-${i}`);
-                const coinsEl = document.getElementById(`btn-coins-${i}`);
-                const quotaEl = document.getElementById(`btn-quota-${i}`);
-                const quotaContainer = document.getElementById(`quota-container-${i}`);
-                
-                if(countEl) countEl.textContent = counts[i] || 0;
-                if(winsEl) winsEl.textContent = wins[i] || 0;
-                if(coinsEl) coinsEl.textContent = coins[i] || 0;
-                
-                if(quotaEl && quotaContainer) {
-                    let remaining = defaultQuota + (manualQuota[i] || 0) - (counts[i] || 0);
-                    quotaEl.textContent = remaining;
-                    if (remaining <= 0) {
-                        quotaContainer.classList.replace('bg-blue-50', 'bg-red-50');
-                        quotaContainer.classList.replace('text-blue-600', 'text-red-600');
-                    } else {
-                        quotaContainer.classList.replace('bg-red-50', 'bg-blue-50');
-                        quotaContainer.classList.replace('text-red-600', 'text-blue-600');
-                    }
-                }
-            }
-
-            renderLeaderboard(counts, wins, coins);
-            updateStoreUI(); 
-        }
-
-        function renderLeaderboard(counts, wins, coins) {
-            const list = document.getElementById('leaderboard-list');
-            let teams = [];
-            for(let i=0; i<teamCount; i++) teams.push({ id: i, name: defaultTeamNames[i], color: teamColors[i], count: counts[i], wins: wins[i], coins: coins[i] });
-            teams.sort((a, b) => b.wins - a.wins || b.count - a.count || a.id - b.id);
-
-            const visibleTeams = teams.slice(0, isLeaderboardExpanded ? 10 : 5);
-            list.innerHTML = visibleTeams.map((t, idx) => {
-                const isWinner = t.wins > 0;
-                return `
-                    <div class="leaderboard-item flex items-center justify-between p-3 cursor-default">
-                        <div class="flex items-center gap-2 overflow-hidden w-full">
-                            <span class="font-bold text-gray-400 w-5 text-center text-sm">${idx + 1}</span>
-                            <div class="w-6 h-6 rounded-full flex-shrink-0 shadow-sm border border-white" style="background-color: ${t.color}"></div>
-                            <div class="flex-1 min-w-0">
-                                <div class="font-bold text-gray-800 text-xs truncate">${t.name}</div>
-                                <div class="text-[10px] text-gray-500">${t.count} دائرة • <span class="text-amber-500 font-bold">${t.coins} 💰</span></div>
-                            </div>
-                            <div class="text-right flex-shrink-0 ml-1">
-                                 <div class="text-base font-black ${isWinner ? 'text-indigo-600' : 'text-gray-300'}">${t.wins}</div>
+          // ==========================================
+          // 📺 شاشة العرض الرئيسية (لوحة النتائج)
+          // ==========================================
+          return (
+            <div className="h-[100dvh] w-full relative flex flex-col bg-slate-950" dir="rtl">
+              
+              {/* ========== أنيميشن الهدف الجديد ========== */}
+              {goalAnimation && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center overflow-hidden bg-black/80 backdrop-blur-md">
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-60">
+                        <div className="absolute w-[150vw] h-[20px] bg-yellow-400/30 blur-2xl animate-spin-slow"></div>
+                        <div className="absolute w-[20px] h-[150vw] bg-blue-400/30 blur-2xl animate-spin-slow" style={{ animationDirection: 'reverse' }}></div>
+                        <div className="w-[80vw] h-[80vw] rounded-full bg-gradient-to-tr from-yellow-500/20 to-blue-600/20 blur-[100px] animate-pulse-glow"></div>
+                    </div>
+                    <div className="relative z-10 flex flex-col items-center animate-goal text-center">
+                        <div className="text-6xl sm:text-[120px] md:text-[180px] font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 via-yellow-400 to-yellow-600 drop-shadow-[0_0_30px_rgba(250,204,21,0.5)] leading-none mb-4 sm:mb-6">
+                            هــــدف!
+                        </div>
+                        <div className="flex flex-col sm:flex-row items-center gap-4 bg-black/60 px-6 sm:px-12 py-6 sm:py-8 rounded-[2rem] sm:rounded-[3rem] border-2 border-yellow-500/30 shadow-[0_0_50px_rgba(234,179,8,0.2)] backdrop-blur-xl relative overflow-hidden">
+                            <div className="absolute inset-0 bg-gradient-to-t from-yellow-500/10 to-transparent"></div>
+                            <div className="relative z-10 flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
+                                <div className="text-6xl sm:text-8xl md:text-9xl drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)] animate-float">{goalAnimation.teamLogo}</div>
+                                <div className="flex flex-col border-t-4 sm:border-t-0 sm:border-r-4 border-yellow-500/50 pt-4 sm:pt-0 sm:pr-6 items-center sm:items-start">
+                                    <span className="text-xl sm:text-3xl md:text-4xl font-bold text-gray-300 text-center sm:text-right">{goalAnimation.teamName}</span>
+                                    {goalAnimation.playerName && (
+                                        <span className="text-2xl sm:text-5xl md:text-6xl font-black text-white mt-2 sm:mt-3 flex items-center justify-center sm:justify-start gap-2 sm:gap-3 text-center sm:text-right">
+                                            {goalAnimation.playerName} <i className="fa-solid fa-futbol text-yellow-400 animate-bounce"></i>
+                                        </span>
+                                    )}
+                                    {goalAnimation.assisterName && (
+                                        <span className="text-lg sm:text-2xl md:text-3xl font-bold text-emerald-400 mt-1 sm:mt-2 text-center sm:text-right">
+                                            صناعة: {goalAnimation.assisterName}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>`;
-            }).join('');
+                    </div>
+                </div>
+              )}
 
-            const expandBtn = document.getElementById('leaderboard-expand-btn');
-            if (teamCount > 5) {
-                expandBtn.classList.remove('hidden');
-                expandBtn.innerText = isLeaderboardExpanded ? "عرض أقل ↑" : "عرض الـ 10 الأوائل ↓";
-                expandBtn.onclick = () => { isLeaderboardExpanded = !isLeaderboardExpanded; renderLeaderboard(counts, wins, coins); };
-            } else { expandBtn.classList.add('hidden'); }
+              {toastMessage && (
+                <div className="absolute top-16 sm:top-6 left-1/2 transform -translate-x-1/2 z-[200] bg-blue-600/90 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-xl sm:rounded-2xl shadow-2xl backdrop-blur-md border border-blue-400/50 flex items-center gap-2 sm:gap-3 animate-bounce w-max max-w-[90vw]">
+                   <i className="fa-solid fa-circle-info text-base sm:text-lg shrink-0"></i>
+                   <span className="font-semibold text-xs sm:text-sm">{toastMessage}</span>
+                </div>
+              )}
+
+              <div className="absolute inset-0 z-0 opacity-30 pointer-events-none">
+                <div className="absolute top-0 right-0 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-blue-600 rounded-full mix-blend-screen filter blur-[80px] sm:blur-[100px] opacity-50 animate-pulse"></div>
+                <div className="absolute bottom-0 left-0 w-[400px] sm:w-[600px] h-[400px] sm:h-[600px] bg-indigo-900 rounded-full mix-blend-screen filter blur-[100px] sm:blur-[120px] opacity-50"></div>
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[500px] sm:w-[800px] h-[250px] sm:h-[400px] bg-teal-800 rounded-full mix-blend-screen filter blur-[120px] sm:blur-[150px] opacity-30"></div>
+              </div>
+
+              {/* أزرار التحكم العلوية وكود الغرفة */}
+              <div className="absolute top-2 sm:top-4 left-2 sm:left-4 z-50 flex gap-1 sm:gap-2">
+                  <button onClick={toggleFullScreen} className="p-2 sm:p-3 bg-white/5 hover:bg-white/20 rounded-full transition-all backdrop-blur-md border border-white/10 shadow-lg group text-gray-400" title="ملء الشاشة">
+                    <i className="fa-solid fa-expand group-hover:text-white transition-all duration-300 text-sm sm:text-lg"></i>
+                  </button>
+                  {/* زر الإعدادات يظهر للأدمن فقط */}
+                  {role === 'admin' && (
+                      <button onClick={() => setIsSettingsOpen(true)} className="p-2 sm:p-3 bg-blue-600 hover:bg-blue-500 rounded-full transition-all backdrop-blur-md shadow-[0_0_15px_rgba(37,99,235,0.5)] group text-white" title="لوحة التحكم">
+                        <i className="fa-solid fa-gear group-hover:rotate-90 transition-all duration-300 text-sm sm:text-lg"></i>
+                      </button>
+                  )}
+              </div>
+
+              {/* عرض كود الغرفة بوضوح أعلى اليمين */}
+              <div className="absolute top-2 sm:top-4 right-2 sm:right-4 z-50">
+                  <div className="bg-white/5 backdrop-blur-md border border-white/10 pl-1 sm:pl-2 pr-2 sm:pr-4 py-1 sm:py-1.5 rounded-full flex items-center gap-1 sm:gap-3 shadow-lg">
+                      <div className="flex items-center gap-1 sm:gap-2">
+                          <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${mqttClient?.connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+                          <span className="text-gray-400 text-[10px] sm:text-xs font-bold hidden sm:inline">كود البث:</span>
+                      </div>
+                      <span className="text-blue-400 font-mono tracking-widest text-sm sm:text-xl font-bold">{roomId}</span>
+                      {role === 'admin' && (
+                          <button onClick={() => {navigator.clipboard.writeText(roomId); showToast("تم نسخ الكود");}} className="bg-white/10 hover:bg-white/20 w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors">
+                              <i className="fa-solid fa-copy text-gray-300 text-[10px] sm:text-xs"></i>
+                          </button>
+                      )}
+                  </div>
+              </div>
+
+              <header className="relative z-10 w-full py-2 sm:py-3 bg-black/40 backdrop-blur-sm border-b border-white/10 flex justify-center items-center shrink-0 shadow-lg mt-12 sm:mt-0">
+                <i className="fa-solid fa-trophy text-yellow-400 text-lg sm:text-xl ml-2 sm:ml-3"></i>
+                <h1 className="text-lg sm:text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-200 truncate px-2 max-w-[70vw]">
+                  {data.leagueName}
+                </h1>
+                <i className="fa-solid fa-trophy text-yellow-400 text-lg sm:text-xl mr-2 sm:mr-3"></i>
+              </header>
+
+              <main className="relative z-10 flex-1 flex flex-col lg:grid lg:grid-cols-12 gap-4 p-2 sm:p-4 overflow-y-auto lg:overflow-hidden custom-scrollbar">
+                
+                {/* ================= العمود الأوسط (المباراة الحالية) - يعرض أولاً في الجوال ================= */}
+                <div className="col-span-12 lg:col-span-6 order-1 lg:order-2 flex flex-col gap-4 lg:h-full shrink-0">
+                  <div className="bg-black/40 backdrop-blur-2xl rounded-3xl border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col relative min-h-[300px] lg:h-[65%] flex-shrink-0 justify-center animate-pulse-glow">
+                    <div className="absolute top-0 left-0 right-0 text-center py-1.5 sm:py-2 bg-gradient-to-r from-transparent via-blue-900/50 to-transparent border-b border-white/10 flex justify-center items-center gap-2 sm:gap-3">
+                      {isTimerRunning && (
+                        <span className="flex h-2.5 w-2.5 sm:h-3 sm:w-3 relative">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-full w-full bg-red-500"></span>
+                        </span>
+                      )}
+                      <span className="text-red-400 font-bold uppercase tracking-widest text-xs sm:text-sm">{data.currentMatch.period}</span>
+                    </div>
+                    
+                    <div className="p-3 sm:p-4 flex flex-col items-center justify-center h-full w-full mt-6 sm:mt-4">
+                       <div className="text-white font-mono text-3xl sm:text-5xl font-black mb-4 sm:mb-8 tracking-wider bg-black/60 px-6 sm:px-8 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-white/10 shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+                          {formatTime(matchSeconds)}
+                       </div>
+                      <div className="flex items-center justify-center w-full max-w-2xl px-2">
+                        <div className="flex flex-col items-center gap-2 sm:gap-4 flex-1">
+                          <div className="w-16 h-16 sm:w-28 sm:h-28 md:w-36 md:h-36 bg-white/5 rounded-full flex items-center justify-center text-3xl sm:text-6xl md:text-7xl shadow-inner border border-white/10 relative animate-float">
+                            <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-md sm:blur-xl -z-10"></div>
+                            {data.currentMatch.homeLogo}
+                          </div>
+                          <h2 className="text-sm sm:text-2xl md:text-3xl font-black text-center leading-tight text-white">{data.currentMatch.homeTeam}</h2>
+                        </div>
+                        <div className="flex flex-col items-center justify-center mx-2 sm:mx-4 md:mx-8">
+                          <div className="text-4xl sm:text-7xl md:text-8xl font-black tracking-tighter flex items-center gap-2 sm:gap-4 md:gap-8 bg-white/5 px-4 sm:px-6 md:px-10 py-2 sm:py-4 md:py-6 rounded-2xl sm:rounded-3xl border border-white/10 shadow-2xl relative overflow-hidden">
+                            <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent"></div>
+                            <span key={`h-${data.currentMatch.homeScore}`} className="text-white relative z-10 inline-block animate-pop-in">{data.currentMatch.homeScore}</span>
+                            <span className="text-blue-500 text-3xl sm:text-6xl md:text-7xl mb-1 sm:mb-2 relative z-10">-</span>
+                            <span key={`a-${data.currentMatch.awayScore}`} className="text-white relative z-10 inline-block animate-pop-in">{data.currentMatch.awayScore}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-center gap-2 sm:gap-4 flex-1">
+                          <div className="w-16 h-16 sm:w-28 sm:h-28 md:w-36 md:h-36 bg-white/5 rounded-full flex items-center justify-center text-3xl sm:text-6xl md:text-7xl shadow-inner border border-white/10 relative animate-float" style={{ animationDelay: '1s' }}>
+                            <div className="absolute inset-0 rounded-full bg-red-500/20 blur-md sm:blur-xl -z-10"></div>
+                            {data.currentMatch.awayLogo}
+                          </div>
+                          <h2 className="text-sm sm:text-2xl md:text-3xl font-black text-center leading-tight text-white">{data.currentMatch.awayTeam}</h2>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl flex-1 flex flex-col justify-center relative overflow-hidden hover:bg-white/10 transition-colors duration-500 min-h-[120px] lg:min-h-0">
+                     <div className="absolute top-0 inset-x-0 bg-black/20 py-1 sm:py-1.5 px-4 border-b border-white/5 flex items-center justify-center gap-2">
+                      <i className="fa-solid fa-calendar text-gray-400 text-[10px] sm:text-xs"></i>
+                      <h3 className="text-[10px] sm:text-xs font-bold text-gray-300">المباراة القادمة</h3>
+                    </div>
+                    <div className="p-2 sm:p-4 flex items-center justify-center gap-3 sm:gap-6 md:gap-12 mt-4 sm:mt-6">
+                      <span className="text-sm sm:text-xl md:text-2xl font-bold text-white text-center flex-1">{data.nextMatch.homeTeam}</span>
+                      <div className="flex flex-col items-center bg-black/40 px-3 sm:px-6 py-1 sm:py-2 rounded-xl border border-white/5 shadow-inner hover:scale-105 transition-transform duration-300 cursor-default">
+                        <span className="text-[10px] sm:text-xs text-gray-400 mb-0.5">{data.nextMatch.date}</span>
+                        <span className="text-lg sm:text-2xl font-mono text-yellow-400 font-black">{data.nextMatch.time}</span>
+                      </div>
+                      <span className="text-sm sm:text-xl md:text-2xl font-bold text-white text-center flex-1">{data.nextMatch.awayTeam}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ================= العمود الأيمن (ترتيب ونتائج) ================= */}
+                <div className="col-span-12 lg:col-span-3 order-2 lg:order-1 flex flex-col gap-4 lg:h-full shrink-0">
+                  <div className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl overflow-hidden flex flex-col h-[300px] lg:h-auto lg:flex-[3] min-h-0">
+                    <div className="bg-gradient-to-r from-blue-900/50 to-transparent p-2 sm:p-3 border-b border-white/10 flex items-center shrink-0">
+                      <i className="fa-solid fa-chart-line text-blue-400 text-base sm:text-lg ml-2"></i>
+                      <h2 className="text-base sm:text-lg font-bold text-white">جدول الترتيب</h2>
+                    </div>
+                    <div className="p-1 sm:p-2 flex-1 overflow-y-auto custom-scrollbar">
+                      <table className="w-full text-xs sm:text-sm text-gray-300">
+                        <thead className="sticky top-0 bg-slate-900/90 backdrop-blur z-10">
+                          <tr className="text-gray-400 border-b border-white/10">
+                            <th className="py-1.5 sm:py-2 text-center w-6 sm:w-8">#</th>
+                            <th className="py-1.5 sm:py-2 text-right">الفريق</th>
+                            <th className="py-1.5 sm:py-2 text-center text-[10px] sm:text-xs">لعب</th>
+                            <th className="py-1.5 sm:py-2 text-center text-yellow-400 text-[10px] sm:text-xs">نقاط</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.standings.map((team, idx) => (
+                            <tr key={idx} className="border-b border-white/5 hover:bg-white/10 transition-colors">
+                              <td className="py-1.5 sm:py-2.5 text-center font-bold text-gray-400">{team.rank}</td>
+                              <td className="py-1.5 sm:py-2.5 font-semibold flex items-center gap-1 sm:gap-1.5 text-white">
+                                {team.form === 'up' && <i className="fa-solid fa-chevron-up text-green-500 text-[8px] sm:text-[10px] shrink-0"></i>}
+                                {team.form === 'down' && <i className="fa-solid fa-chevron-down text-red-500 text-[8px] sm:text-[10px] shrink-0"></i>}
+                                {team.form === 'same' && <i className="fa-solid fa-minus text-gray-500 text-[8px] sm:text-[10px] shrink-0"></i>}
+                                <span className="text-sm sm:text-base w-4 sm:w-5 text-center">{team.logo}</span>
+                                <span className="truncate max-w-[80px] sm:max-w-[90px]">{team.team}</span>
+                              </td>
+                              <td className="py-1.5 sm:py-2.5 text-center">{team.played}</td>
+                              <td className="py-1.5 sm:py-2.5 text-center font-bold text-yellow-400 sm:text-lg">{team.points}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl overflow-hidden flex flex-col h-[250px] lg:h-auto lg:flex-[2] min-h-0">
+                    <div className="bg-gradient-to-r from-purple-900/50 to-transparent p-2 sm:p-3 border-b border-white/10 flex items-center shrink-0">
+                      <i className="fa-solid fa-clock-rotate-left text-purple-400 text-base sm:text-lg ml-2"></i>
+                      <h2 className="text-base sm:text-lg font-bold text-white">آخر النتائج</h2>
+                    </div>
+                    <div className="p-1 sm:p-2 overflow-y-auto custom-scrollbar flex-1">
+                      <div className="flex flex-col gap-2">
+                        {data.recentMatches.map((match, idx) => (
+                          <div key={idx} className="flex flex-col bg-black/30 hover:bg-black/50 py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg sm:rounded-xl border border-white/5 shadow-sm">
+                            <div className="text-[9px] sm:text-[10px] text-gray-400 mb-1 text-center w-full">{match.date}</div>
+                            <div className="flex items-center justify-between w-full">
+                              <span className="text-[10px] sm:text-xs font-bold text-white truncate flex-1 text-right">{match.homeTeam}</span>
+                              <div className="flex items-center justify-center bg-black/60 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-white/10 mx-1 sm:mx-2 shrink-0">
+                                <span className="text-xs sm:text-sm font-black text-white">{match.homeScore}</span>
+                                <span className="text-gray-500 mx-1">-</span>
+                                <span className="text-xs sm:text-sm font-black text-white">{match.awayScore}</span>
+                              </div>
+                              <span className="text-[10px] sm:text-xs font-bold text-white truncate flex-1 text-left">{match.awayTeam}</span>
+                            </div>
+                          </div>
+                        ))}
+                        {data.recentMatches.length === 0 && <div className="text-center text-gray-500 text-xs sm:text-sm py-4">لا توجد نتائج مسجلة</div>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ================= العمود الأيسر (الهدافين والصناع) ================= */}
+                <div className="col-span-12 lg:col-span-3 order-3 flex flex-col gap-4 lg:h-full shrink-0">
+                  <div className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl overflow-hidden flex flex-col h-[250px] lg:h-auto lg:flex-1 min-h-0">
+                    <div className="bg-gradient-to-r from-red-900/40 to-transparent p-2 sm:p-3 border-b border-white/10 flex items-center shrink-0">
+                      <i className="fa-solid fa-bullseye text-red-400 text-base sm:text-lg ml-2"></i>
+                      <h2 className="text-base sm:text-lg font-bold text-white">قائمة الهدافين</h2>
+                    </div>
+                    <div className="p-1 sm:p-2 overflow-y-auto custom-scrollbar flex-1">
+                      <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                        {data.topScorers.map((player, idx) => {
+                          let rankClass = "bg-white/10 text-gray-300 border border-white/5";
+                          if (idx === 0) rankClass = "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 shadow-[0_0_10px_rgba(234,179,8,0.2)]";
+                          else if (idx === 1) rankClass = "bg-slate-300/20 text-slate-300 border border-slate-300/30 shadow-[0_0_10px_rgba(203,213,225,0.2)]";
+                          else if (idx === 2) rankClass = "bg-amber-600/20 text-amber-500 border border-amber-600/30 shadow-[0_0_10px_rgba(217,119,6,0.2)]";
+
+                          return (
+                            <div key={idx} className="flex items-center justify-between bg-black/20 hover:bg-black/40 p-1 sm:p-1.5 rounded-lg sm:rounded-xl border border-white/5">
+                              <div className="flex items-center gap-1 sm:gap-1.5 overflow-hidden">
+                                <div className={`w-5 h-5 sm:w-6 sm:h-6 shrink-0 rounded-full flex items-center justify-center font-bold text-[9px] sm:text-[10px] ${rankClass}`}>{idx + 1}</div>
+                                <div className="flex flex-col overflow-hidden">
+                                  <span className="font-bold text-[10px] sm:text-[11px] text-white leading-tight truncate">{player.name}</span>
+                                  <span className="text-[8px] sm:text-[9px] text-gray-400 truncate">{player.team}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-center min-w-[1.2rem] sm:min-w-[1.5rem] shrink-0 bg-white/5 px-1 py-0.5 rounded border border-white/5 ml-0.5 sm:ml-1">
+                                <span className="text-xs sm:text-sm font-black text-red-400">{player.goals}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl overflow-hidden flex flex-col h-[250px] lg:h-auto lg:flex-1 min-h-0">
+                    <div className="bg-gradient-to-r from-emerald-900/40 to-transparent p-2 sm:p-3 border-b border-white/10 flex items-center shrink-0">
+                      <i className="fa-solid fa-users text-emerald-400 text-base sm:text-lg ml-2"></i>
+                      <h2 className="text-base sm:text-lg font-bold text-white">الأكثر صناعة</h2>
+                    </div>
+                    <div className="p-1 sm:p-2 overflow-y-auto custom-scrollbar flex-1">
+                      <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                        {data.topAssists.map((player, idx) => {
+                          let rankClass = "bg-white/10 text-gray-300 border border-white/5";
+                          if (idx === 0) rankClass = "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 shadow-[0_0_10px_rgba(234,179,8,0.2)]";
+                          else if (idx === 1) rankClass = "bg-slate-300/20 text-slate-300 border border-slate-300/30 shadow-[0_0_10px_rgba(203,213,225,0.2)]";
+                          else if (idx === 2) rankClass = "bg-amber-600/20 text-amber-500 border border-amber-600/30 shadow-[0_0_10px_rgba(217,119,6,0.2)]";
+
+                          return (
+                            <div key={idx} className="flex items-center justify-between bg-black/20 hover:bg-black/40 p-1 sm:p-1.5 rounded-lg sm:rounded-xl border border-white/5">
+                              <div className="flex items-center gap-1 sm:gap-1.5 overflow-hidden">
+                                <div className={`w-5 h-5 sm:w-6 sm:h-6 shrink-0 rounded-full flex items-center justify-center font-bold text-[9px] sm:text-[10px] ${rankClass}`}>{idx + 1}</div>
+                                <div className="flex flex-col overflow-hidden">
+                                  <span className="font-bold text-[10px] sm:text-[11px] text-white leading-tight truncate">{player.name}</span>
+                                  <span className="text-[8px] sm:text-[9px] text-gray-400 truncate">{player.team}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-center min-w-[1.2rem] sm:min-w-[1.5rem] shrink-0 bg-white/5 px-1 py-0.5 rounded border border-white/5 ml-0.5 sm:ml-1">
+                                <span className="text-xs sm:text-sm font-black text-emerald-400">{player.assists}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </main>
+
+              {/* ================= نافذة الإعدادات (تعمل للأدمن فقط) ================= */}
+              {isSettingsOpen && role === 'admin' && (
+                <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center transition-opacity p-2 sm:p-4" onClick={() => setIsSettingsOpen(false)}>
+                  <div className="bg-slate-900 border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-6 w-full max-w-2xl max-h-[95dvh] sm:max-h-[90dvh] flex flex-col shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+                    
+                    <div className="flex justify-between items-center mb-3 sm:mb-4 border-b border-white/10 pb-3 sm:pb-4 shrink-0">
+                      <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2 text-white">
+                        <i className="fa-solid fa-gear text-blue-400"></i>
+                        لوحة التحكم
+                      </h3>
+                      <button type="button" onClick={() => setIsSettingsOpen(false)} className="text-gray-400 hover:text-red-500 hover:bg-red-500/10 transition-colors p-2 sm:p-3 rounded-xl cursor-pointer flex items-center justify-center">
+                        <i className="fa-solid fa-xmark text-lg sm:text-xl"></i>
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2 mb-4 sm:mb-6 shrink-0 bg-black/30 p-1 rounded-xl overflow-x-auto custom-scrollbar pb-2">
+                      <button onClick={() => setActiveSettingsTab('match')} className={`flex-1 min-w-[100px] py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg font-bold transition-all text-xs sm:text-sm whitespace-nowrap ${activeSettingsTab === 'match' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5'}`}>المباراة الحالية</button>
+                      <button onClick={() => setActiveSettingsTab('schedule')} className={`flex-1 min-w-[100px] py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg font-bold transition-all text-xs sm:text-sm whitespace-nowrap ${activeSettingsTab === 'schedule' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5'}`}>جدولة الدوري</button>
+                      <button onClick={() => setActiveSettingsTab('teams')} className={`flex-1 min-w-[100px] py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg font-bold transition-all text-xs sm:text-sm whitespace-nowrap ${activeSettingsTab === 'teams' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5'}`}>الفرق والترتيب</button>
+                      <button onClick={() => setActiveSettingsTab('squads')} className={`flex-1 min-w-[100px] py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg font-bold transition-all text-xs sm:text-sm whitespace-nowrap ${activeSettingsTab === 'squads' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5'}`}>تشكيلات الفرق</button>
+                      <button onClick={() => setActiveSettingsTab('stats')} className={`flex-1 min-w-[100px] py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg font-bold transition-all text-xs sm:text-sm whitespace-nowrap ${activeSettingsTab === 'stats' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:bg-white/5'}`}>إحصائيات اللاعبين</button>
+                    </div>
+
+                    <div className="overflow-y-auto pr-1 sm:pr-2 custom-scrollbar flex-1 text-white">
+                      
+                      {activeSettingsTab === 'match' && (
+                        <div className="space-y-4 sm:space-y-6">
+                          
+                          <div className="bg-slate-800/50 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-white/5">
+                            <h4 className="font-bold mb-3 sm:mb-4 border-b border-white/5 pb-2 flex items-center gap-2 text-sm sm:text-base">
+                              <i className="fa-solid fa-trophy text-yellow-400"></i> إعدادات البطولة
+                            </h4>
+                            <div className="flex flex-col gap-1.5 sm:gap-2">
+                              <label className="block text-[10px] sm:text-xs text-gray-400">اسم البطولة / الدوري (يظهر أعلى الشاشة)</label>
+                              <input type="text" value={data.leagueName} onChange={(e) => setData(prev => ({...prev, leagueName: e.target.value}))} className="w-full bg-black/50 border border-white/10 rounded-lg sm:rounded-xl p-2.5 sm:p-3 focus:outline-none focus:border-blue-500 font-bold text-sm sm:text-base" placeholder="مثال: دوري أبطال النخبة..." />
+                            </div>
+                          </div>
+
+                          {data.schedule && data.schedule.length > 0 && data.currentScheduleIndex < data.schedule.length && (
+                              <button onClick={loadNextScheduledMatch} className="w-full py-3 sm:py-4 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 rounded-xl sm:rounded-2xl font-bold text-white transition-all shadow-lg flex justify-center items-center gap-2 sm:gap-3 border border-indigo-400/30 animate-pulse text-sm sm:text-base">
+                                  <i className="fa-solid fa-forward-step text-lg sm:text-xl"></i> 
+                                  تجهيز القادمة: ({data.schedule[data.currentScheduleIndex].homeTeam} ضد {data.schedule[data.currentScheduleIndex].awayTeam})
+                              </button>
+                          )}
+
+                          <div className="bg-slate-800/50 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-yellow-500/30">
+                            <h4 className="font-bold mb-3 sm:mb-4 border-b border-white/5 pb-2 flex items-center gap-2 text-sm sm:text-base">
+                              <i className="fa-solid fa-clock text-yellow-400"></i> التحكم بوقت المباراة
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                              <div className="flex flex-col gap-1.5 sm:gap-2">
+                                 <label className="block text-[10px] sm:text-xs text-gray-400">حالة العداد</label>
+                                 <button onClick={() => setIsTimerRunning(!isTimerRunning)} className={`w-full py-2.5 sm:py-3 rounded-lg sm:rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-sm sm:text-base ${isTimerRunning ? 'bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/30' : 'bg-green-500/20 text-green-400 border border-green-500/50 hover:bg-green-500/30'}`}>
+                                   <i className={`fa-solid ${isTimerRunning ? 'fa-pause' : 'fa-play'}`}></i>
+                                   {isTimerRunning ? 'إيقاف مؤقت' : 'بدء / استكمال الوقت'}
+                                 </button>
+                              </div>
+                              <div className="flex flex-col gap-1.5 sm:gap-2">
+                                <label className="block text-[10px] sm:text-xs text-gray-400">تعديل الدقائق</label>
+                                <div className="flex items-center gap-2">
+                                  <input type="number" value={Math.floor(matchSeconds / 60)} onChange={(e) => setMatchSeconds(Number(e.target.value) * 60)} className="w-full bg-black/50 border border-white/10 rounded-lg sm:rounded-xl p-2.5 sm:p-3 text-center font-bold text-lg sm:text-xl focus:outline-none focus:border-yellow-500" />
+                                  <span className="text-xs sm:text-sm text-gray-400">دقيقة</span>
+                                </div>
+                              </div>
+                              <div className="sm:col-span-2 mt-1 sm:mt-2">
+                                <label className="block text-[10px] sm:text-xs text-gray-400 mb-1">مسمى الشوط / الحالة</label>
+                                <input type="text" value={data.currentMatch.period} onChange={(e) => handleCurrentMatchUpdate('period', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg sm:rounded-xl p-2.5 sm:p-3 focus:outline-none focus:border-yellow-500 text-sm sm:text-base" />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="bg-slate-800/50 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-white/5">
+                            <h4 className="font-bold mb-3 sm:mb-4 border-b border-white/5 pb-2 text-blue-400 text-sm sm:text-base">الفريق المضيف</h4>
+                            <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-3 sm:mb-4">
+                              <div>
+                                <label className="block text-[10px] sm:text-xs text-gray-400 mb-1">اختر الفريق</label>
+                                <select value={data.currentMatch.homeTeam} onChange={(e) => handleTeamSelect('home', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 focus:outline-none focus:border-blue-500 h-9 sm:h-10 cursor-pointer text-white text-xs sm:text-sm">
+                                  <option value="" disabled>اختر فريقاً...</option>
+                                  {data.standings.map((team, i) => <option key={i} value={team.team} className="bg-slate-800 text-white">{team.logo} {team.team}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] sm:text-xs text-gray-400 mb-1">النتيجة (الأهداف)</label>
+                                <input type="number" value={data.currentMatch.homeScore} onChange={(e) => handleCurrentMatchUpdate('homeScore', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-center font-bold focus:outline-none focus:border-blue-500 h-9 sm:h-10 text-white text-sm sm:text-base" />
+                              </div>
+                            </div>
+                            
+                            {activeGoalTeam !== 'home' ? (
+                                <button onClick={() => setActiveGoalTeam('home')} className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded-lg font-bold transition-colors border border-blue-500/30 flex justify-center items-center gap-2 text-sm">
+                                    <i className="fa-solid fa-futbol"></i> إضافة هدف للمضيف
+                                </button>
+                            ) : (
+                                <div className="bg-blue-900/30 p-3 rounded-xl border border-blue-500/50 mt-2 animate-pop-in">
+                                    <label className="block text-[10px] sm:text-xs text-blue-200 mb-1.5">من سجل الهدف؟</label>
+                                    <select value={goalScorer} onChange={(e) => setGoalScorer(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 focus:outline-none text-white mb-2.5 text-xs sm:text-sm">
+                                        <option value="none">غير محدد</option>
+                                        {getTeamPlayers(data.currentMatch.homeTeam).map((p, i) => <option key={i} value={p}>{p}</option>)}
+                                    </select>
+                                    
+                                    <label className="block text-[10px] sm:text-xs text-emerald-200 mb-1.5">من صنع الهدف؟</label>
+                                    <select value={goalAssister} onChange={(e) => setGoalAssister(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 focus:outline-none text-white mb-3 border-emerald-500/30 text-xs sm:text-sm">
+                                        <option value="none">بدون صانع</option>
+                                        {getTeamPlayers(data.currentMatch.homeTeam).map((p, i) => <option key={i} value={p}>{p}</option>)}
+                                    </select>
+
+                                    <div className="flex gap-2 text-xs sm:text-sm">
+                                        <button onClick={() => confirmGoal('home')} className="flex-1 bg-blue-600 hover:bg-blue-500 py-2 rounded-lg text-white font-bold transition-colors">تأكيد الهدف</button>
+                                        <button onClick={() => {setActiveGoalTeam(null); setGoalScorer('none'); setGoalAssister('none');}} className="px-3 sm:px-4 bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-white transition-colors">إلغاء</button>
+                                    </div>
+                                </div>
+                            )}
+                          </div>
+
+                          <div className="bg-slate-800/50 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-white/5">
+                            <h4 className="font-bold mb-3 sm:mb-4 border-b border-white/5 pb-2 text-red-400 text-sm sm:text-base">الفريق الضيف</h4>
+                            <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-3 sm:mb-4">
+                              <div>
+                                <label className="block text-[10px] sm:text-xs text-gray-400 mb-1">اختر الفريق</label>
+                                <select value={data.currentMatch.awayTeam} onChange={(e) => handleTeamSelect('away', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 focus:outline-none focus:border-red-500 h-9 sm:h-10 cursor-pointer text-white text-xs sm:text-sm">
+                                  <option value="" disabled>اختر فريقاً...</option>
+                                  {data.standings.map((team, i) => <option key={i} value={team.team} className="bg-slate-800 text-white">{team.logo} {team.team}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] sm:text-xs text-gray-400 mb-1">النتيجة (الأهداف)</label>
+                                <input type="number" value={data.currentMatch.awayScore} onChange={(e) => handleCurrentMatchUpdate('awayScore', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 text-center font-bold focus:outline-none focus:border-red-500 h-9 sm:h-10 text-white text-sm sm:text-base" />
+                              </div>
+                            </div>
+
+                            {activeGoalTeam !== 'away' ? (
+                                <button onClick={() => setActiveGoalTeam('away')} className="w-full py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded-lg font-bold transition-colors border border-red-500/30 flex justify-center items-center gap-2 text-sm">
+                                    <i className="fa-solid fa-futbol"></i> إضافة هدف للضيف
+                                </button>
+                            ) : (
+                                <div className="bg-red-900/30 p-3 rounded-xl border border-red-500/50 mt-2 animate-pop-in">
+                                    <label className="block text-[10px] sm:text-xs text-red-200 mb-1.5">من سجل الهدف؟</label>
+                                    <select value={goalScorer} onChange={(e) => setGoalScorer(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 focus:outline-none text-white mb-2.5 text-xs sm:text-sm">
+                                        <option value="none">غير محدد</option>
+                                        {getTeamPlayers(data.currentMatch.awayTeam).map((p, i) => <option key={i} value={p}>{p}</option>)}
+                                    </select>
+                                    
+                                    <label className="block text-[10px] sm:text-xs text-emerald-200 mb-1.5">من صنع الهدف؟</label>
+                                    <select value={goalAssister} onChange={(e) => setGoalAssister(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg p-2 focus:outline-none text-white mb-3 border-emerald-500/30 text-xs sm:text-sm">
+                                        <option value="none">بدون صانع</option>
+                                        {getTeamPlayers(data.currentMatch.awayTeam).map((p, i) => <option key={i} value={p}>{p}</option>)}
+                                    </select>
+
+                                    <div className="flex gap-2 text-xs sm:text-sm">
+                                        <button onClick={() => confirmGoal('away')} className="flex-1 bg-red-600 hover:bg-red-500 py-2 rounded-lg text-white font-bold transition-colors">تأكيد الهدف</button>
+                                        <button onClick={() => {setActiveGoalTeam(null); setGoalScorer('none'); setGoalAssister('none');}} className="px-3 sm:px-4 bg-gray-700 hover:bg-gray-600 py-2 rounded-lg text-white transition-colors">إلغاء</button>
+                                    </div>
+                                </div>
+                            )}
+                          </div>
+
+                          <button onClick={finishMatch} className="w-full py-3 sm:py-4 mt-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 rounded-xl sm:rounded-2xl font-bold text-white transition-all shadow-md flex justify-center items-center gap-2 border border-green-500/30 text-sm sm:text-base">
+                            <i className="fa-solid fa-trophy"></i> إنهاء المباراة واعتماد النتيجة
+                          </button>
+
+                          <div className="bg-slate-800/50 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-white/5 mt-4 sm:mt-6">
+                            <h4 className="font-bold mb-3 sm:mb-4 border-b border-white/5 pb-2 flex items-center gap-2 text-purple-400 text-sm sm:text-base">
+                              <i className="fa-solid fa-clock-rotate-left"></i> إدارة النتائج السابقة
+                            </h4>
+                            <div className="space-y-2">
+                               {data.recentMatches.map((rm, idx) => (
+                                   <div key={idx} className="flex justify-between items-center bg-black/40 p-2 rounded-lg border border-white/10">
+                                      <span className="text-xs sm:text-sm text-gray-300 font-semibold truncate flex-1">{rm.homeTeam} <span className="text-blue-400 mx-1">{rm.homeScore} - {rm.awayScore}</span> {rm.awayTeam}</span>
+                                      <button onClick={() => removeRecentMatch(idx)} className="text-gray-500 hover:text-red-500 p-1.5 rounded transition-colors shrink-0" title="حذف النتيجة">
+                                        <i className="fa-solid fa-trash"></i>
+                                      </button>
+                                   </div>
+                               ))}
+                               {data.recentMatches.length === 0 && <span className="text-xs sm:text-sm text-gray-500">لا يوجد نتائج لعرضها</span>}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {activeSettingsTab === 'schedule' && (
+                        <div className="space-y-4 sm:space-y-6">
+                          <div className="bg-slate-800/50 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-indigo-500/30">
+                              <h4 className="font-bold mb-3 sm:mb-4 border-b border-white/5 pb-2 flex items-center gap-2 text-indigo-400 text-sm sm:text-base">
+                                <i className="fa-solid fa-calendar-days"></i> إنشاء جدول الدوري تلقائياً
+                              </h4>
+                              <p className="text-[10px] sm:text-xs text-gray-400 mb-3 sm:mb-4">حدد عدد مرات المواجهة بين كل فريقين، وسيقوم النظام بإنشاء جدول.</p>
+                              <div className="flex flex-col gap-3 sm:gap-4 mb-4 sm:mb-6">
+                                  <div className="w-full">
+                                      <label className="block text-[10px] sm:text-xs text-gray-400 mb-1.5 sm:mb-2">عدد المواجهات (ذهاب، إياب...)</label>
+                                      <input type="number" min="1" max="4" value={data.rounds} onChange={(e) => setData(prev => ({...prev, rounds: parseInt(e.target.value) || 1}))} className="w-full bg-black/50 border border-white/10 rounded-lg sm:rounded-xl p-2.5 sm:p-3 focus:outline-none focus:border-indigo-500 text-white text-sm sm:text-base" />
+                                  </div>
+                                  <button onClick={handleGenerateSchedule} className="w-full py-2.5 sm:py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg sm:rounded-xl font-bold text-white transition-colors flex items-center justify-center gap-2 border border-indigo-500/50 text-sm sm:text-base">
+                                      <i className="fa-solid fa-wand-magic-sparkles"></i> إنشاء الجدول
+                                  </button>
+                              </div>
+
+                              {data.schedule && data.schedule.length > 0 && (
+                                  <div className="bg-black/30 p-3 sm:p-4 rounded-lg sm:rounded-xl border border-white/5 max-h-[300px] sm:max-h-[400px] overflow-y-auto custom-scrollbar">
+                                      <h5 className="text-xs sm:text-sm font-semibold text-gray-400 mb-2 sm:mb-3 flex items-center justify-between border-b border-white/5 pb-2">
+                                        <span>المباريات المجدولة ({data.schedule.length})</span>
+                                        <span className="text-[9px] sm:text-xs text-indigo-400 bg-indigo-500/20 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded">القادمة: {data.currentScheduleIndex + 1}</span>
+                                      </h5>
+                                      <div className="space-y-1.5 sm:space-y-2">
+                                          {data.schedule.map((match, idx) => (
+                                              <div key={idx} className={`flex items-center justify-between p-2 sm:p-3 rounded-lg border transition-all ${idx < data.currentScheduleIndex ? 'bg-white/5 border-white/5 opacity-50' : idx === data.currentScheduleIndex ? 'bg-indigo-900/50 border-indigo-500/50 shadow-sm' : 'bg-black/40 border-white/5'}`}>
+                                                  <span className="text-[9px] sm:text-xs text-gray-400 w-12 sm:w-16 shrink-0">{match.roundName}</span>
+                                                  <div className="flex-1 flex items-center justify-center overflow-hidden">
+                                                    <span className="text-xs sm:text-sm font-bold flex-1 text-left px-1 sm:px-2 truncate text-white">{match.homeTeam}</span>
+                                                    <span className="text-[8px] sm:text-[10px] text-gray-500 font-black px-1 sm:px-2 shrink-0">VS</span>
+                                                    <span className="text-xs sm:text-sm font-bold flex-1 text-right px-1 sm:px-2 truncate text-white">{match.awayTeam}</span>
+                                                  </div>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              )}
+                          </div>
+                        </div>
+                      )}
+
+                      {activeSettingsTab === 'teams' && (
+                        <div className="space-y-2 sm:space-y-3">
+                          {data.standings.map((team, index) => (
+                            <div key={index} className="flex gap-1.5 sm:gap-2 items-center bg-black/30 p-2 sm:p-3 rounded-lg sm:rounded-xl border border-white/5">
+                              <button onClick={() => removeTeam(index)} className="p-1.5 sm:p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-md sm:rounded-lg transition-colors shrink-0" title="حذف الفريق">
+                                <i className="fa-solid fa-trash text-sm"></i>
+                              </button>
+                              <div className="w-12 sm:w-20 shrink-0">
+                                <input type="number" value={team.points} onChange={(e) => handleStandingsUpdate(index, 'points', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 text-center text-yellow-400 font-bold focus:outline-none text-sm sm:text-base" title="النقاط" />
+                              </div>
+                              <select value={team.logo} onChange={(e) => handleStandingsUpdate(index, 'logo', e.target.value)} className="bg-black/50 border border-white/10 rounded-md sm:rounded-lg p-1 sm:p-2 text-base sm:text-xl focus:outline-none cursor-pointer h-8 sm:h-10 text-white shrink-0">
+                                {LOGO_OPTIONS.map((logo, i) => <option key={i} value={logo} className="bg-slate-800">{logo || 'بدون'}</option>)}
+                              </select>
+                              <div className="flex-1 min-w-0">
+                                <input type="text" value={team.team} onChange={(e) => handleStandingsUpdate(index, 'team', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 focus:outline-none focus:border-blue-500 h-8 sm:h-10 text-white text-xs sm:text-sm" placeholder="اسم الفريق" />
+                              </div>
+                            </div>
+                          ))}
+                          <button onClick={addTeam} className="w-full mt-3 sm:mt-4 py-2 sm:py-3 bg-white/5 border border-white/10 border-dashed rounded-lg sm:rounded-xl flex items-center justify-center gap-2 text-gray-400 hover:text-blue-400 hover:border-blue-500/50 transition-all hover:bg-blue-500/10 text-sm">
+                            <i className="fa-solid fa-plus"></i> إضافة فريق جديد
+                          </button>
+                        </div>
+                      )}
+
+                      {activeSettingsTab === 'squads' && (
+                        <div className="space-y-4 sm:space-y-6">
+                          <div className="bg-slate-800/50 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-purple-500/30">
+                            <h4 className="font-bold mb-3 sm:mb-4 border-b border-white/5 pb-2 flex items-center gap-2 text-purple-400 text-sm sm:text-base">
+                              <i className="fa-solid fa-clipboard-list"></i> توزيع اللاعبين على الفرق
+                            </h4>
+                            <div className="mb-3 sm:mb-4">
+                              <label className="block text-[10px] sm:text-xs text-gray-400 mb-1.5 sm:mb-2">اختر الفريق</label>
+                              <select value={selectedSquadTeam} onChange={(e) => setSelectedSquadTeam(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-lg sm:rounded-xl p-2.5 sm:p-3 focus:outline-none focus:border-purple-500 cursor-pointer font-semibold text-white text-sm sm:text-base">
+                                {data.standings.map((team, i) => <option key={i} value={team.team} className="bg-slate-800 text-white">{team.logo} {team.team}</option>)}
+                              </select>
+                            </div>
+                            <form onSubmit={handleAddPlayerToSquad} className="flex gap-2 mb-4 sm:mb-6">
+                              <input type="text" value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} placeholder="اسم اللاعب..." className="flex-1 bg-black/50 border border-white/10 rounded-lg sm:rounded-xl p-2.5 sm:p-3 focus:outline-none focus:border-purple-500 text-white text-sm sm:text-base min-w-0" />
+                              <button type="submit" disabled={!newPlayerName.trim()} className="px-4 sm:px-6 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-600/50 rounded-lg sm:rounded-xl font-bold text-white transition-colors flex items-center gap-2 border border-purple-500/50 shrink-0 text-sm sm:text-base">
+                                <i className="fa-solid fa-plus"></i> <span className="hidden sm:inline">إضافة</span>
+                              </button>
+                            </form>
+                            <div className="bg-black/30 p-3 sm:p-4 rounded-lg sm:rounded-xl border border-white/5 min-h-[150px] sm:min-h-[200px]">
+                              <h5 className="text-xs sm:text-sm font-semibold text-gray-400 mb-2 sm:mb-3 border-b border-white/5 pb-2">قائمة لاعبي الفريق ({data.standings.find(t => t.team === selectedSquadTeam)?.players?.length || 0})</h5>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2">
+                                {data.standings.find(t => t.team === selectedSquadTeam)?.players?.map((player, idx) => (
+                                  <div key={idx} className="flex items-center justify-between bg-white/5 hover:bg-white/10 p-2 sm:p-3 rounded-lg border border-white/5 transition-colors group">
+                                    <span className="font-semibold flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-300 truncate">
+                                      <span className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-[10px] sm:text-xs shrink-0">{idx + 1}</span>
+                                      <span className="truncate">{player}</span>
+                                    </span>
+                                    <button onClick={() => handleRemovePlayerFromSquad(selectedSquadTeam, idx)} className="p-1 sm:p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors shrink-0">
+                                      <i className="fa-solid fa-trash text-xs sm:text-sm"></i>
+                                    </button>
+                                  </div>
+                                ))}
+                                {(!data.standings.find(t => t.team === selectedSquadTeam)?.players || data.standings.find(t => t.team === selectedSquadTeam)?.players?.length === 0) && (
+                                  <div className="col-span-full flex flex-col items-center justify-center py-6 sm:py-8 text-gray-600">
+                                    <i className="fa-solid fa-users text-2xl sm:text-4xl mb-1 sm:mb-2 opacity-30"></i>
+                                    <p className="text-xs sm:text-sm">لا يوجد لاعبين مضافين.</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {activeSettingsTab === 'stats' && (
+                        <div className="space-y-4 sm:space-y-6">
+                          <div className="bg-slate-800/50 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-white/5">
+                            <h4 className="font-bold mb-3 sm:mb-4 border-b border-white/5 pb-2 flex items-center gap-2 text-red-400 text-sm sm:text-base">
+                              <i className="fa-solid fa-bullseye"></i> إدارة قائمة الهدافين
+                            </h4>
+                            <div className="space-y-2 sm:space-y-3">
+                              {data.topScorers.map((player, index) => (
+                                <div key={index} className="flex gap-1.5 sm:gap-2 items-center bg-black/40 p-2 rounded-lg sm:rounded-xl border border-white/5 shadow-sm flex-wrap sm:flex-nowrap">
+                                  <button onClick={() => removeStatPlayer('topScorers', index)} className="p-1.5 sm:p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-md sm:rounded-lg transition-colors shrink-0" title="حذف">
+                                    <i className="fa-solid fa-trash text-sm"></i>
+                                  </button>
+                                  <input type="number" value={player.goals} onChange={(e) => handleStatUpdate('topScorers', index, 'goals', e.target.value)} className="w-12 sm:w-16 bg-black/50 border border-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 text-center text-red-400 font-bold focus:outline-none text-sm shrink-0" title="الأهداف" />
+                                  <input type="text" value={player.name} onChange={(e) => handleStatUpdate('topScorers', index, 'name', e.target.value)} className="flex-1 w-[40%] bg-black/50 border border-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 focus:outline-none text-xs sm:text-sm text-white min-w-0" placeholder="اسم اللاعب" />
+                                  <select value={player.team} onChange={(e) => handleStatUpdate('topScorers', index, 'team', e.target.value)} className="flex-1 w-[40%] bg-black/50 border border-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 text-gray-300 focus:outline-none text-xs sm:text-sm cursor-pointer min-w-0">
+                                    <option value="" disabled>اختر الفريق</option>
+                                    {data.standings.map((t, i) => <option key={i} value={t.team} className="bg-slate-800">{t.team}</option>)}
+                                  </select>
+                                </div>
+                              ))}
+                              <button onClick={() => addStatPlayer('topScorers')} className="w-full mt-2 py-2 sm:py-3 bg-white/5 border border-white/10 border-dashed rounded-lg sm:rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all">
+                                <i className="fa-solid fa-plus"></i> إضافة لاعب جديد
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="bg-slate-800/50 p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-white/5">
+                            <h4 className="font-bold mb-3 sm:mb-4 border-b border-white/5 pb-2 flex items-center gap-2 text-emerald-400 text-sm sm:text-base">
+                              <i className="fa-solid fa-users"></i> إدارة الأكثر صناعة
+                            </h4>
+                            <div className="space-y-2 sm:space-y-3">
+                              {data.topAssists.map((player, index) => (
+                                <div key={index} className="flex gap-1.5 sm:gap-2 items-center bg-black/40 p-2 rounded-lg sm:rounded-xl border border-white/5 shadow-sm flex-wrap sm:flex-nowrap">
+                                  <button onClick={() => removeStatPlayer('topAssists', index)} className="p-1.5 sm:p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-md sm:rounded-lg transition-colors shrink-0" title="حذف">
+                                    <i className="fa-solid fa-trash text-sm"></i>
+                                  </button>
+                                  <input type="number" value={player.assists} onChange={(e) => handleStatUpdate('topAssists', index, 'assists', e.target.value)} className="w-12 sm:w-16 bg-black/50 border border-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 text-center text-emerald-400 font-bold focus:outline-none text-sm shrink-0" title="الصناعات" />
+                                  <input type="text" value={player.name} onChange={(e) => handleStatUpdate('topAssists', index, 'name', e.target.value)} className="flex-1 w-[40%] bg-black/50 border border-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 focus:outline-none text-xs sm:text-sm text-white min-w-0" placeholder="اسم اللاعب" />
+                                  <select value={player.team} onChange={(e) => handleStatUpdate('topAssists', index, 'team', e.target.value)} className="flex-1 w-[40%] bg-black/50 border border-white/10 rounded-md sm:rounded-lg p-1.5 sm:p-2 text-gray-300 focus:outline-none text-xs sm:text-sm cursor-pointer min-w-0">
+                                    <option value="" disabled>اختر الفريق</option>
+                                    {data.standings.map((t, i) => <option key={i} value={t.team} className="bg-slate-800">{t.team}</option>)}
+                                  </select>
+                                </div>
+                              ))}
+                              <button onClick={() => addStatPlayer('topAssists')} className="w-full mt-2 py-2 sm:py-3 bg-white/5 border border-white/10 border-dashed rounded-lg sm:rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all">
+                                <i className="fa-solid fa-plus"></i> إضافة صانع لعب
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
         }
 
-        // الأزرار والتفاعلات
-        document.addEventListener('DOMContentLoaded', () => {
-            initCloud(); // بدء الاتصال بالسيرفر الجديد
-            createGrid();
-            initUI();
-            processUpdates();
-
-            // المتجر
-            document.getElementById('btn-buy-cannon').onclick = () => {
-                if (teamCoinsGlobal[selectedTeam] >= cannonPrice) {
-                    activeWeapon = 'cannon'; isDeleteMode = false;
-                    document.getElementById('weapon-status').className = "bg-red-100 text-red-700 text-xs font-bold p-2 rounded-lg text-center animate-pulse mt-2";
-                    document.getElementById('weapon-status').textContent = "المدفع جاهز! اختر هدفاً بالساحة 🎯";
-                    document.getElementById('weapon-status').classList.remove('hidden');
-                }
-            };
-            document.getElementById('btn-buy-teleport').onclick = () => {
-                if (teamCoinsGlobal[selectedTeam] >= teleportPrice) {
-                    activeWeapon = 'teleport'; isDeleteMode = false;
-                    document.getElementById('weapon-status').className = "bg-blue-100 text-blue-700 text-xs font-bold p-2 rounded-lg text-center animate-pulse mt-2";
-                    document.getElementById('weapon-status').textContent = "التنقل السريع جاهز! اختر مكاناً فارغاً 🚀";
-                    document.getElementById('weapon-status').classList.remove('hidden');
-                }
-            };
-            document.getElementById('btn-buy-trap').onclick = () => {
-                if (teamCoinsGlobal[selectedTeam] >= trapPrice) {
-                    activeWeapon = 'trap'; isDeleteMode = false;
-                    document.getElementById('weapon-status').className = "bg-gray-100 text-gray-700 text-xs font-bold p-2 rounded-lg text-center animate-pulse mt-2";
-                    document.getElementById('weapon-status').textContent = "الفخ جاهز! اختر إحدى دوائرك لحمايتها 🕸️";
-                    document.getElementById('weapon-status').classList.remove('hidden');
-                }
-            };
-
-            // الحذف واللون
-            document.getElementById('color-mode').onclick = () => {
-                isDeleteMode = false; activeWeapon = null;
-                document.getElementById('weapon-status').classList.add('hidden');
-                document.getElementById('color-mode').className = "flex-1 py-2 px-4 rounded-lg text-sm font-bold shadow-sm bg-white text-indigo-600 transition-all";
-                document.getElementById('delete-mode').className = "flex-1 py-2 px-4 rounded-lg text-sm font-bold text-gray-500 hover:text-gray-700 transition-all";
-                document.getElementById('delete-instructions').classList.add('hidden');
-            };
-            document.getElementById('delete-mode').onclick = () => {
-                isDeleteMode = true; activeWeapon = null;
-                document.getElementById('weapon-status').classList.add('hidden');
-                document.getElementById('delete-mode').className = "flex-1 py-2 px-4 rounded-lg text-sm font-bold shadow-sm bg-red-500 text-white transition-all";
-                document.getElementById('color-mode').className = "flex-1 py-2 px-4 rounded-lg text-sm font-bold text-gray-500 hover:text-gray-700 transition-all";
-                document.getElementById('delete-instructions').classList.remove('hidden');
-            };
-
-            // الإعدادات
-            const modal = document.getElementById('settings-modal');
-            const teamCountInput = document.getElementById('team-count-input');
-            const tSettings = document.getElementById('team-settings');
-            
-            function renderTeamSettingsInputs(count) {
-                tSettings.innerHTML = '';
-                for(let i = 0; i < count; i++) {
-                     tSettings.innerHTML += `
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs font-bold text-gray-400 w-4">${i+1}</span>
-                            <input type="color" id="col-${i}" value="${teamColors[i]}" class="w-8 h-8 rounded cursor-pointer border-0">
-                            <input type="text" id="nam-${i}" value="${defaultTeamNames[i]}" class="flex-1 px-3 py-1 border rounded text-sm focus:border-indigo-500 outline-none" placeholder="اسم الفريق">
-                        </div>`;
-                }
-            }
-            teamCountInput.oninput = (e) => renderTeamSettingsInputs(Math.min(30, parseInt(e.target.value) || 2));
-            
-            document.getElementById('settings-btn').onclick = () => {
-                document.getElementById('main-title-input').value = document.getElementById('main-title').textContent;
-                teamCountInput.value = teamCount; document.getElementById('grid-rows-input').value = gridRows;
-                document.getElementById('grid-cols-input').value = gridCols; document.getElementById('coins-per-circle-input').value = coinsPerCircle;
-                document.getElementById('default-quota-input').value = defaultQuota;
-                document.getElementById('cannon-price-input').value = cannonPrice;
-                document.getElementById('teleport-price-input').value = teleportPrice;
-                document.getElementById('trap-price-input').value = trapPrice;
-                renderTeamSettingsInputs(teamCount); modal.classList.remove('hidden');
-            };
-            document.getElementById('close-settings').onclick = () => modal.classList.add('hidden');
-            
-            document.getElementById('save-settings').onclick = () => {
-                document.getElementById('main-title').textContent = document.getElementById('main-title-input').value;
-                document.getElementById('subtitle').textContent = document.getElementById('subtitle-input').value;
-                teamCount = Math.max(2, Math.min(30, parseInt(teamCountInput.value)));
-                const oldRows = gridRows, oldCols = gridCols;
-                gridRows = Math.max(5, Math.min(50, parseInt(document.getElementById('grid-rows-input').value)));
-                gridCols = Math.max(5, Math.min(60, parseInt(document.getElementById('grid-cols-input').value)));
-                coinsPerCircle = Math.max(1, parseInt(document.getElementById('coins-per-circle-input').value));
-                defaultQuota = Math.max(1, parseInt(document.getElementById('default-quota-input').value));
-                cannonPrice = Math.max(1, parseInt(document.getElementById('cannon-price-input').value));
-                teleportPrice = Math.max(1, parseInt(document.getElementById('teleport-price-input').value));
-                trapPrice = Math.max(1, parseInt(document.getElementById('trap-price-input').value));
-
-                for(let i = 0; i < teamCount; i++) {
-                    teamColors[i] = document.getElementById(`col-${i}`)?.value || teamColors[i];
-                    defaultTeamNames[i] = document.getElementById(`nam-${i}`)?.value || defaultTeamNames[i];
-                }
-                if (oldRows !== gridRows || oldCols !== gridCols) {
-                    createGrid();
-                    for (let [key, data] of circleData) {
-                        const [r, c] = key.split('-').map(Number);
-                        if (r >= gridRows || c >= gridCols) circleData.delete(key);
-                    }
-                }
-                initUI(); processUpdates(); modal.classList.add('hidden');
-                circleData.forEach((data, key) => { const el = document.querySelector(`.circle[data-key="${key}"]`); if(el) updateCircleVisual(el, data.team); });
-            };
-
-            document.getElementById('clear-btn').onclick = () => {
-                if(confirm("مسح اللوحة بالكامل؟")) {
-                    circleData.clear(); trapData.clear(); manualCoins.fill(0); manualQuota.fill(0);
-                    document.querySelectorAll('.circle').forEach(c => updateCircleVisual(c, null));
-                    processUpdates(); modal.classList.add('hidden');
-                }
-            };
-        });
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
- </body>
+</body>
 </html>
